@@ -1,5 +1,5 @@
 import type { GroupId, Place, Region, SubId } from "./types";
-import { classifyBiz, matchesSearch } from "./classify";
+import { classifyBiz, isExcludedName, matchesSearch } from "./classify";
 
 // [네트워크 회복탄력성]
 // 이 앱은 magazinegreen.co.kr(Webflow) 배포본과 동일한 백엔드를 그대로 재사용한다.
@@ -91,6 +91,7 @@ async function fetchNaverIndependent(region: Region, keyword: string): Promise<P
     const name = stripHtml(d.title || "");
     const category = d.category || "";
     if (!matchesSearch(name, category, keyword)) continue;
+    if (isExcludedName(name) || isExcludedName(category)) continue;
     let cls = classifyBiz(`${name} ${category}`);
     if (!cls) {
       if (name.includes(keyword)) cls = { group: "company", sub: "general" };
@@ -280,6 +281,7 @@ export async function searchPlaces(region: Region, keyword: string): Promise<Pla
       seen.add(d.id);
       const name = d.place_name || "";
       if (!matchesSearch(name, d.category_name || "", keyword)) continue;
+      if (isExcludedName(name) || isExcludedName(d.category_name || "")) continue;
       let cls = classifyBiz(`${name} ${d.category_name || ""}`);
       if (!cls) {
         if (name.includes(keyword)) cls = { group: "company", sub: "general" };
@@ -305,15 +307,20 @@ export async function searchPlaces(region: Region, keyword: string): Promise<Pla
     kakaoTask, parkTask, v2CompanyTask, v2MaterialTask, naverTask,
   ]);
 
-  const v2CompanyFiltered = v2Company.filter((p) => matchesSearch(p.placeName, "", keyword));
-  const v2MaterialFiltered = v2Material.filter((p) => matchesSearch(p.placeName, "", keyword));
+  const v2CompanyFiltered = v2Company.filter((p) => matchesSearch(p.placeName, "", keyword) && !isExcludedName(p.placeName));
+  const v2MaterialFiltered = v2Material.filter((p) => matchesSearch(p.placeName, "", keyword) && !isExcludedName(p.placeName));
   const naverCompany = naver.filter((p) => p.categoryDepth1 === "company");
   const naverMaterial = naver.filter((p) => p.categoryDepth1 === "material");
   const kakaoCompany = kakao.filter((p) => p.categoryDepth1 === "company");
   const kakaoMaterial = kakao.filter((p) => p.categoryDepth1 === "material");
 
-  const company = sortByRelevance(mergeDedup(kakaoCompany, v2CompanyFiltered, naverCompany), keyword);
-  const material = sortByRelevance(mergeDedup(kakaoMaterial, v2MaterialFiltered, naverMaterial), keyword);
+  // [최종 안전망] 소스를 막론하고 병원/주유소/아파트 등 명백히 무관한 업종은 한 번 더 걸러낸다.
+  const company = sortByRelevance(mergeDedup(kakaoCompany, v2CompanyFiltered, naverCompany), keyword).filter(
+    (p) => !isExcludedName(p.placeName)
+  );
+  const material = sortByRelevance(mergeDedup(kakaoMaterial, v2MaterialFiltered, naverMaterial), keyword).filter(
+    (p) => !isExcludedName(p.placeName)
+  );
   const park = sortByRelevance(parks, keyword);
 
   return [...company, ...material, ...park];
