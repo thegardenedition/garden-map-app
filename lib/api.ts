@@ -1,5 +1,5 @@
 import type { GroupId, Place, Region, SubId } from "./types";
-import { classifyBiz, isExcludedName, matchesSearch } from "./classify";
+import { CATEGORY_LIKE_TERMS, classifyBiz, isExcludedName, matchesSearch } from "./classify";
 
 // [네트워크 회복탄력성]
 // 이 앱은 magazinegreen.co.kr(Webflow) 배포본과 동일한 백엔드를 그대로 재사용한다.
@@ -92,11 +92,8 @@ async function fetchNaverIndependent(region: Region, keyword: string): Promise<P
     const category = d.category || "";
     if (!matchesSearch(name, category, keyword)) continue;
     if (isExcludedName(name) || isExcludedName(category)) continue;
-    let cls = classifyBiz(`${name} ${category}`);
-    if (!cls) {
-      if (name.includes(keyword)) cls = { group: "company", sub: "general" };
-      else continue;
-    }
+    const cls = classifyBiz(`${name} ${category}`);
+    if (!cls) continue;
     const lat = parseFloat(d.mapy) / 10000000;
     const lng = parseFloat(d.mapx) / 10000000;
     if (!lat || !lng) continue;
@@ -282,11 +279,8 @@ export async function searchPlaces(region: Region, keyword: string): Promise<Pla
       const name = d.place_name || "";
       if (!matchesSearch(name, d.category_name || "", keyword)) continue;
       if (isExcludedName(name) || isExcludedName(d.category_name || "")) continue;
-      let cls = classifyBiz(`${name} ${d.category_name || ""}`);
-      if (!cls) {
-        if (name.includes(keyword)) cls = { group: "company", sub: "general" };
-        else continue;
-      }
+      const cls = classifyBiz(`${name} ${d.category_name || ""}`);
+      if (!cls) continue;
       const lat = parseFloat(d.y);
       const lng = parseFloat(d.x);
       if (!lat || !lng) continue;
@@ -307,8 +301,22 @@ export async function searchPlaces(region: Region, keyword: string): Promise<Pla
     kakaoTask, parkTask, v2CompanyTask, v2MaterialTask, naverTask,
   ]);
 
-  const v2CompanyFiltered = v2Company.filter((p) => matchesSearch(p.placeName, "", keyword) && !isExcludedName(p.placeName));
-  const v2MaterialFiltered = v2Material.filter((p) => matchesSearch(p.placeName, "", keyword) && !isExcludedName(p.placeName));
+  // [조경종합 버킷 안전장치] 예전 대량 수집 당시 오분류된 데이터가 이 버킷에 몰려 있을 위험이 커서,
+  // 검색어가 "조경" 계열 카테고리성 단어가 아니면 이 버킷은 DB 결과에서 아예 보여주지 않는다.
+  // ("남도" 같은 흔한 단어로 검색했을 때 폐차장·박물관 등이 걸리던 문제의 근본 원인이었다.)
+  const isCategoryLikeSearch = CATEGORY_LIKE_TERMS.includes(keyword);
+  const v2CompanyFiltered = v2Company.filter(
+    (p) =>
+      matchesSearch(p.placeName, "", keyword) &&
+      !isExcludedName(p.placeName) &&
+      (p.categoryDepth2 !== "general" || isCategoryLikeSearch)
+  );
+  const v2MaterialFiltered = v2Material.filter(
+    (p) =>
+      matchesSearch(p.placeName, "", keyword) &&
+      !isExcludedName(p.placeName) &&
+      (p.categoryDepth2 !== "general" || isCategoryLikeSearch)
+  );
   const naverCompany = naver.filter((p) => p.categoryDepth1 === "company");
   const naverMaterial = naver.filter((p) => p.categoryDepth1 === "material");
   const kakaoCompany = kakao.filter((p) => p.categoryDepth1 === "company");
