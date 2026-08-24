@@ -8,13 +8,16 @@ import FilterChips from "@/components/FilterChips";
 import BottomSheet from "@/components/BottomSheet";
 import PlaceList from "@/components/PlaceList";
 import PlaceDetailSheet from "@/components/PlaceDetailSheet";
+import Sidebar from "@/components/Sidebar";
 import { useGardenMapStore } from "@/lib/store";
 import { usePlacesSearch, useNearbySearch } from "@/lib/queries";
+import { useIsDesktop } from "@/lib/useIsDesktop";
 import { fetchNaverHomepage, fetchTourIntro } from "@/lib/api";
 import type { Place } from "@/lib/types";
 import { GROUP_LABEL } from "@/lib/types";
 
 export default function Page() {
+  const isDesktop = useIsDesktop();
   const queryClient = useQueryClient();
   const region = useGardenMapStore((s) => s.region);
   const searchTerm = useGardenMapStore((s) => s.searchTerm);
@@ -45,6 +48,7 @@ export default function Page() {
   }, [rawPlaces, activeGroup, activeSub]);
 
   const selectedPlace = places.find((p) => p.placeId === selectedPlaceId) ?? null;
+  const hasSearched = isNearbyMode || submittedTerm.length > 0;
 
   function runSearch() {
     setNearbyCoords(null);
@@ -84,7 +88,7 @@ export default function Page() {
     });
   }
 
-  // [예측 프리패칭] 마커를 탭한 순간(바텀 시트가 열리기 전) TanStack Query 캐시를 미리 채운다.
+  // [예측 프리패칭] 마커/리스트 항목을 탭한 순간 상세 패널이 열리기 전에 TanStack Query 캐시를 미리 채운다.
   const onPrefetchPlace = useCallback(
     (place: Place) => {
       if (place.source === "tourapi") {
@@ -104,26 +108,65 @@ export default function Page() {
     [queryClient, region]
   );
 
-  const hasSearched = isNearbyMode || submittedTerm.length > 0;
+  function handleSelect(p: Place) {
+    selectPlace(p.placeId);
+    onPrefetchPlace(p);
+  }
 
+  const activeGroupLabel = activeGroup ? GROUP_LABEL[activeGroup] : null;
+
+  const mapCanvas = (
+    <MapCanvas
+      places={places}
+      selectedPlaceId={selectedPlaceId}
+      onSelectPlace={selectPlace}
+      onPrefetchPlace={onPrefetchPlace}
+      focusTrigger={focusTrigger}
+      focusCoords={nearbyCoords ?? locateCoords}
+    />
+  );
+
+  if (isDesktop) {
+    // [데스크탑] 고정 사이드바 + 지도. 시트를 접었다 펴는 동작이 필요 없어 항상 전체 리스트가 보인다.
+    return (
+      <div className="relative flex h-[100dvh] w-full overflow-hidden bg-[var(--color-deep-blue)]">
+        <Sidebar
+          onSubmit={runSearch}
+          onNearby={handleNearby}
+          locating={locating}
+          places={places}
+          hasSearched={hasSearched}
+          isLoading={isLoading}
+          activeGroupLabel={activeGroupLabel}
+          selectedPlace={selectedPlace}
+          region={region}
+          onSelectPlace={handleSelect}
+          onClosePlace={() => selectPlace(null)}
+        />
+        <div className="relative h-full flex-1">
+          {mapCanvas}
+          <button
+            onClick={handleLocateOnly}
+            aria-label="현재 위치"
+            className="absolute bottom-6 right-6 z-[30] flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+          >
+            ◎
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // [모바일] 지도를 전체 화면으로 쓰고, 검색/필터는 지도 위 플로팅 상단바, 결과는 하단 드래그 시트.
   return (
-    <div className="relative mx-auto h-[100dvh] max-w-[520px] overflow-hidden bg-[var(--color-deep-blue)] md:border-x md:border-white/10">
-      <MapCanvas
-        places={places}
-        selectedPlaceId={selectedPlaceId}
-        onSelectPlace={selectPlace}
-        onPrefetchPlace={onPrefetchPlace}
-        focusTrigger={focusTrigger}
-        focusCoords={nearbyCoords ?? locateCoords}
-      />
+    <div className="relative mx-auto h-[100dvh] w-full overflow-hidden bg-[var(--color-deep-blue)]">
+      {mapCanvas}
 
-      {/* [z-20] 상단 고정 검색바 + 2-Depth 스와이프 필터 칩 */}
       <div className="absolute inset-x-3 top-3 z-[20] flex flex-col gap-2">
         <TopBar onSubmit={runSearch} />
         <FilterChips />
       </div>
 
-      {/* [z-30] 플로팅 컨트롤: 내 주변 찾기 / 현재 위치 */}
       <div className="absolute bottom-[calc(30vh+18px)] right-3.5 z-[30] flex flex-col gap-2.5">
         <button
           onClick={handleNearby}
@@ -149,20 +192,9 @@ export default function Page() {
           </span>
         </div>
         <div className="px-[18px] pb-1 pt-1 text-[11px] text-[#8A90B4]">
-          {isLoading
-            ? "검색 중..."
-            : hasSearched
-              ? `${places.length}곳 표시 중${activeGroup ? ` (${GROUP_LABEL[activeGroup]})` : ""}`
-              : ""}
+          {isLoading ? "검색 중..." : hasSearched ? `${places.length}곳 표시 중${activeGroupLabel ? ` (${activeGroupLabel})` : ""}` : ""}
         </div>
-        <PlaceList
-          places={places}
-          hasSearched={hasSearched && !isLoading}
-          onSelect={(p) => {
-            selectPlace(p.placeId);
-            onPrefetchPlace(p);
-          }}
-        />
+        <PlaceList places={places} hasSearched={hasSearched && !isLoading} onSelect={handleSelect} />
       </BottomSheet>
 
       <PlaceDetailSheet place={selectedPlace} region={region} onClose={() => selectPlace(null)} />
