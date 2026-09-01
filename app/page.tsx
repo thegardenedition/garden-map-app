@@ -10,7 +10,7 @@ import PlaceList from "@/components/PlaceList";
 import PlaceDetailSheet from "@/components/PlaceDetailSheet";
 import Sidebar from "@/components/Sidebar";
 import { useGardenMapStore } from "@/lib/store";
-import { usePlacesSearch, useNearbySearch } from "@/lib/queries";
+import { useBizSearch, useParkSearch, useNearbySearch, useProjectPins } from "@/lib/queries";
 import { useIsDesktop } from "@/lib/useIsDesktop";
 import { fetchNaverHomepage, fetchTourIntro } from "@/lib/api";
 import type { Place } from "@/lib/types";
@@ -34,12 +34,19 @@ export default function Page() {
   const [focusTrigger, setFocusTrigger] = useState(0);
   const [locating, setLocating] = useState(false);
 
-  const searchQuery = usePlacesSearch(region, submittedTerm);
+  const bizQuery = useBizSearch(region, submittedTerm);
+  const parkQuery = useParkSearch(submittedTerm);
   const nearbyQuery = useNearbySearch(nearbyCoords);
+  const projectPinsQuery = useProjectPins();
 
   const isNearbyMode = Boolean(nearbyCoords) && !submittedTerm;
-  const rawPlaces = isNearbyMode ? nearbyQuery.data : searchQuery.data;
-  const isLoading = isNearbyMode ? nearbyQuery.isLoading : searchQuery.isLoading;
+  const rawPlaces = useMemo(() => {
+    if (isNearbyMode) return nearbyQuery.data ?? [];
+    return [...(bizQuery.data ?? []), ...(parkQuery.data ?? [])];
+  }, [isNearbyMode, nearbyQuery.data, bizQuery.data, parkQuery.data]);
+  // [체감 속도] 로딩 표시는 빠른 조경회사/자재 쿼리 기준으로만 판단한다. 공원 데이터는 뒤에서
+  // 채워지며, 다 로드되기를 기다리지 않고 화면을 먼저 보여준다.
+  const isLoading = isNearbyMode ? nearbyQuery.isLoading : bizQuery.isLoading;
 
   const places: Place[] = useMemo(() => {
     const list = rawPlaces ?? [];
@@ -123,6 +130,8 @@ export default function Page() {
       onPrefetchPlace={onPrefetchPlace}
       focusTrigger={focusTrigger}
       focusCoords={nearbyCoords ?? locateCoords}
+      isDesktop={isDesktop}
+      projectPins={projectPinsQuery.data ?? []}
     />
   );
 

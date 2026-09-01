@@ -71,3 +71,18 @@ export const REGION_LIST = [
 export type Region = (typeof REGION_LIST)[number];
 
 export type SheetSnap = "peek" | "half" | "full";
+
+// [프로젝트 연동] 채널그린 프로젝트 사이트(project.magazinegreen.co.kr)의 게시글을 지도 위에
+// 항상 표시되는 별도 레이어로 얹는다. 기존 조경회사/자재/공원 taxonomy(GroupId)와는 성격이
+// 달라서(검색으로 필터링되지 않고, 클릭하면 우리 상세 시트가 아니라 외부 게시글로 바로 이동)
+// 굳이 같은 분류 체계에 억지로 끼워 넣지 않고 독립된 타입으로 둔다.
+export interface ProjectPin {
+  slug: string;
+  title: string;
+  category: string;
+  location: string;
+  lat: number;
+  lng: number;
+  thumbnail: string;
+  url: string;
+}

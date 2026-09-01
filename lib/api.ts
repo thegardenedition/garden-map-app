@@ -1,4 +1,4 @@
-import type { GroupId, Place, Region, SubId } from "./types";
+import type { GroupId, Place, ProjectPin, Region, SubId } from "./types";
 import { CATEGORY_LIKE_TERMS, classifyBiz, isExcludedName, matchesSearch } from "./classify";
 
 // [네트워크 회복탄력성]
@@ -186,7 +186,7 @@ async function fetchOnePage(code: string, pageNo: number): Promise<{ items: Tour
 }
 
 async function fetchOneCode(code: string): Promise<TourItem[]> {
-  const MAX_PAGES = 15;
+  const MAX_PAGES = 8;
   let collected: TourItem[] = [];
   let pageNo = 1;
   while (pageNo <= MAX_PAGES) {
@@ -267,7 +267,10 @@ function sortByRelevance(items: Place[], term: string): Place[] {
   return [...items].sort((a, b) => relevanceScore(a.placeName, term) - relevanceScore(b.placeName, term));
 }
 
-export async function searchPlaces(region: Region, keyword: string): Promise<Place[]> {
+// [속도 개선] 예전엔 검색할 때마다 전국 공원 데이터(최대 15페이지 x 11개 코드)를 다 불러온 뒤에야
+// 결과를 보여줬다. 조경회사/자재 결과는 거의 항상 빠르게 끝나므로, 공원 검색을 별도 함수로 분리해서
+// 두 개의 독립된 쿼리로 돌린다 — 조경회사/자재는 먼저 뜨고, 공원은 뒤에서 채워진다.
+export async function searchBizPlaces(region: Region, keyword: string): Promise<Place[]> {
   if (!keyword) return [];
 
   const kakaoTask = fetchKakaoCombined(region, keyword).then((docs) => {
@@ -289,16 +292,12 @@ export async function searchPlaces(region: Region, keyword: string): Promise<Pla
     return out;
   });
 
-  const parkTask = fetchAllParks().then((all) =>
-    all.filter((p) => p.placeName.includes(keyword))
-  );
-
   const v2CompanyTask = fetchBizV2(region, "company");
   const v2MaterialTask = fetchBizV2(region, "material");
   const naverTask = fetchNaverIndependent(region, keyword);
 
-  const [kakao, parks, v2Company, v2Material, naver] = await Promise.all([
-    kakaoTask, parkTask, v2CompanyTask, v2MaterialTask, naverTask,
+  const [kakao, v2Company, v2Material, naver] = await Promise.all([
+    kakaoTask, v2CompanyTask, v2MaterialTask, naverTask,
   ]);
 
   // [조경종합 버킷 안전장치] 예전 대량 수집 당시 오분류된 데이터가 이 버킷에 몰려 있을 위험이 커서,
@@ -329,9 +328,20 @@ export async function searchPlaces(region: Region, keyword: string): Promise<Pla
   const material = sortByRelevance(mergeDedup(kakaoMaterial, v2MaterialFiltered, naverMaterial), keyword).filter(
     (p) => !isExcludedName(p.placeName)
   );
-  const park = sortByRelevance(parks, keyword);
 
-  return [...company, ...material, ...park];
+  return [...company, ...material];
+}
+
+// [속도 개선] 공원 검색은 전국 데이터를 다 훑어야 해서 느리다. searchBizPlaces와 별도 쿼리로 돌려서
+// 조경회사/자재 결과를 가로막지 않게 한다. fetchAllParks 자체는 세션 내에서 캐시되므로 두 번째
+// 검색부터는 이 함수도 즉시 끝난다.
+export async function searchParks(keyword: string): Promise<Place[]> {
+  if (!keyword) return [];
+  const all = await fetchAllParks();
+  return sortByRelevance(
+    all.filter((p) => p.placeName.includes(keyword)),
+    keyword
+  );
 }
 
 interface SupabaseNearbyRow {
@@ -430,4 +440,21 @@ export async function fetchNaverHomepage(title: string, region: Region): Promise
 
 export function kakaoDirLink(name: string, lat: number, lng: number): string {
   return `https://map.kakao.com/link/to/${encodeURIComponent(name)},${lat},${lng}`;
+}
+
+// [프로젝트 연동] project.magazinegreen.co.kr(별도 Next.js 배포)의 /api/projects 엔드포인트를
+// 불러와 지도 위 항상-표시 레이어로 얹는다. 검색어와 무관하게 항상 로드되며, 실패해도 지도
+// 자체의 조경회사/자재/공원 검색에는 영향을 주지 않도록 조용히 빈 배열로 폴백한다.
+const PROJECTS_API = "https://project.magazinegreen.co.kr/api/projects";
+
+export async function fetchProjectPins(): Promise<ProjectPin[]> {
+  try {
+    const res = await fetchWithRetry(PROJECTS_API);
+    const data = await res.json();
+    const results = data?.results;
+    if (!Array.isArray(results)) return [];
+    return results.filter((p) => typeof p.lat === "number" && typeof p.lng === "number");
+  } catch {
+    return [];
+  }
 }
