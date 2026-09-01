@@ -21,6 +21,7 @@ export default function Sidebar({
   region,
   onSelectPlace,
   onClosePlace,
+  statusLabel,
 }: {
   onSubmit: () => void;
   onNearby: () => void;
@@ -33,6 +34,7 @@ export default function Sidebar({
   region: Region;
   onSelectPlace: (p: Place) => void;
   onClosePlace: () => void;
+  statusLabel: string; // "내 위치 · 반경 5km" 또는 "전국 · 검색어를 입력해주세요" 등, 실제 검색 상태 기준
 }) {
   const storeRegion = useGardenMapStore((s) => s.region);
   const setRegion = useGardenMapStore((s) => s.setRegion);
@@ -96,10 +98,7 @@ export default function Sidebar({
       </div>
 
       <div className="mt-3 flex flex-shrink-0 items-center justify-between px-6">
-        <span className="tp-caption text-[var(--color-neon-yellow)]">
-          {region}
-          {searchTerm ? ` · "${searchTerm}"` : " · 검색어를 입력해주세요"}
-        </span>
+        <span className="tp-caption text-[var(--color-neon-yellow)]">{statusLabel}</span>
       </div>
       <div className="px-6 pb-2 pt-1 text-[11px] text-white/50">
         {isLoading ? "검색 중..." : hasSearched ? `${places.length}곳 표시 중${activeGroupLabel ? ` (${activeGroupLabel})` : ""}` : ""}

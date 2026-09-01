@@ -121,6 +121,9 @@ export default function Page() {
   }
 
   const activeGroupLabel = activeGroup ? GROUP_LABEL[activeGroup] : null;
+  const statusLabel = isNearbyMode
+    ? "내 위치 · 반경 5km"
+    : region + (submittedTerm ? ` · "${submittedTerm}"` : " · 검색어를 입력해주세요");
 
   const mapCanvas = (
     <MapCanvas
@@ -151,6 +154,7 @@ export default function Page() {
           region={region}
           onSelectPlace={handleSelect}
           onClosePlace={() => selectPlace(null)}
+          statusLabel={statusLabel}
         />
         <div className="relative h-full flex-1">
           {mapCanvas}
@@ -196,9 +200,7 @@ export default function Page() {
 
       <BottomSheet snap={selectedPlaceId ? "peek" : sheetSnap} onSnapChange={setSheetSnap} dragHandleLabel="결과 목록 시트">
         <div className="flex items-center justify-between px-[18px] pt-0.5">
-          <span className="tp-caption text-[var(--color-deep-blue)]">
-            {isNearbyMode ? "내 위치 · 반경 5km" : region + (submittedTerm ? ` · "${submittedTerm}"` : " · 검색어를 입력해주세요")}
-          </span>
+          <span className="tp-caption text-[var(--color-deep-blue)]">{statusLabel}</span>
         </div>
         <div className="px-[18px] pb-1 pt-1 text-[11px] text-[#8A90B4]">
           {isLoading ? "검색 중..." : hasSearched ? `${places.length}곳 표시 중${activeGroupLabel ? ` (${activeGroupLabel})` : ""}` : ""}
