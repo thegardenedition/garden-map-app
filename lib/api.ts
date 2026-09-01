@@ -359,8 +359,30 @@ interface SupabaseNearbyRow {
   distance_m: number;
 }
 
+// [내 주변 찾기 + 공원 카테고리] Supabase의 반경 검색 RPC는 조경회사/자재(garden_biz 테이블)만
+// 갖고 있어서 공원/수목원은 애초에 대상이 아니었다. 공원 카테고리를 선택하고 "내 주변에서 찾기"를
+// 눌러도 계속 0건이었던 이유가 이거다. 별도 geo 인덱스를 새로 만드는 대신, 이미 세션에 캐시된
+// 전국 공원 좌표(fetchAllParks)를 하버사인 공식으로 직접 거리 계산해서 반경 안의 것만 골라낸다.
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+async function fetchNearbyParks(lat: number, lng: number, radiusM: number): Promise<Place[]> {
+  const all = await fetchAllParks();
+  return all
+    .map((p) => ({ ...p, distanceM: haversineMeters(lat, lng, p.coordinates[1], p.coordinates[0]) }))
+    .filter((p) => p.distanceM! <= radiusM)
+    .sort((a, b) => a.distanceM! - b.distanceM!);
+}
+
 export async function searchNearby(lat: number, lng: number, radiusM = 5000): Promise<Place[]> {
-  const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/rpc/nearby_garden_biz`, {
+  const bizTask = fetchWithRetry(`${SUPABASE_URL}/rest/v1/rpc/nearby_garden_biz`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -368,25 +390,32 @@ export async function searchNearby(lat: number, lng: number, radiusM = 5000): Pr
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
     },
     body: JSON.stringify({ center_lat: lat, center_lng: lng, radius_m: radiusM, filter_grp: null, limit_count: 60 }),
-  });
-  const rows: SupabaseNearbyRow[] = await res.json();
-  return (Array.isArray(rows) ? rows : []).map((r) => {
-    const homepageLink = r.homepage || "";
-    const isKakaoLink = homepageLink.includes("place.map.kakao.com");
-    return {
-      placeId: `sb-${r.id}`,
-      categoryDepth1: r.grp,
-      categoryDepth2: r.sub,
-      placeName: r.name || "",
-      address: r.addr || "",
-      contact: r.tel || null,
-      coordinates: [r.lng, r.lat],
-      homepage: isKakaoLink ? homepageLink : null,
-      homepageDirect: !isKakaoLink && homepageLink ? homepageLink : null,
-      source: "kakao" as const,
-      distanceM: r.distance_m,
-    };
-  });
+  })
+    .then((res) => res.json())
+    .then((rows: SupabaseNearbyRow[]) =>
+      (Array.isArray(rows) ? rows : []).map((r) => {
+        const homepageLink = r.homepage || "";
+        const isKakaoLink = homepageLink.includes("place.map.kakao.com");
+        return {
+          placeId: `sb-${r.id}`,
+          categoryDepth1: r.grp,
+          categoryDepth2: r.sub,
+          placeName: r.name || "",
+          address: r.addr || "",
+          contact: r.tel || null,
+          coordinates: [r.lng, r.lat] as [number, number],
+          homepage: isKakaoLink ? homepageLink : null,
+          homepageDirect: !isKakaoLink && homepageLink ? homepageLink : null,
+          source: "kakao" as const,
+          distanceM: r.distance_m,
+        };
+      })
+    );
+
+  const parkTask = fetchNearbyParks(lat, lng, radiusM);
+
+  const [bizPlaces, parkPlaces] = await Promise.all([bizTask, parkTask]);
+  return [...bizPlaces, ...parkPlaces].sort((a, b) => (a.distanceM ?? Infinity) - (b.distanceM ?? Infinity));
 }
 
 interface TourIntro {
