@@ -442,10 +442,10 @@ export function kakaoDirLink(name: string, lat: number, lng: number): string {
   return `https://map.kakao.com/link/to/${encodeURIComponent(name)},${lat},${lng}`;
 }
 
-// [프로젝트 연동] project.magazinegreen.co.kr(별도 Next.js 배포)의 /api/projects 엔드포인트를
+// [프로젝트 연동] projects.magazinegreen.co.kr(별도 Next.js 배포)의 /api/projects 엔드포인트를
 // 불러와 지도 위 항상-표시 레이어로 얹는다. 검색어와 무관하게 항상 로드되며, 실패해도 지도
 // 자체의 조경회사/자재/공원 검색에는 영향을 주지 않도록 조용히 빈 배열로 폴백한다.
-const PROJECTS_API = "https://project.magazinegreen.co.kr/api/projects";
+const PROJECTS_API = "https://projects.magazinegreen.co.kr/api/projects";
 
 export async function fetchProjectPins(): Promise<ProjectPin[]> {
   try {
