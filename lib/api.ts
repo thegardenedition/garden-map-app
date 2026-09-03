@@ -312,18 +312,27 @@ export async function searchBizPlaces(region: Region, keyword: string): Promise<
   // [조경종합 버킷 안전장치] 예전 대량 수집 당시 오분류된 데이터가 이 버킷에 몰려 있을 위험이 커서,
   // 검색어가 "조경" 계열 카테고리성 단어가 아니면 이 버킷은 DB 결과에서 아예 보여주지 않는다.
   // ("남도" 같은 흔한 단어로 검색했을 때 폐차장·박물관 등이 걸리던 문제의 근본 원인이었다.)
+  //
+  // [버그 수정] 이 필터는 v2 DB 항목에 한해서는 항상 "업체명이 검색어를 포함할 때만" 통과된
+  // 상태였다(matchesSearch에 넘기는 categoryText가 빈 문자열이라 카테고리 매칭 경로 자체가 없음).
+  // 즉 이름 그대로 검색해도 "조경종합" 버킷 업체는 검색어가 "조경"류 단어가 아닌 한 100% 걸러졌다
+  // — "팀펄리가든"처럼 이름에 조경/설계/시공 같은 단어가 없는 정상 업체까지 이름 검색으로 못 찾는
+  // 원인이었다. "남도" 같은 짧고 흔한 단어의 우연한 충돌만 막는 게 원래 의도였으므로, 검색어가
+  // 어느 정도 구체적인 길이(3자 이상)면 이름 매칭을 통과시킨다.
+  const MIN_SPECIFIC_NAME_SEARCH_LEN = 3;
   const isCategoryLikeSearch = CATEGORY_LIKE_TERMS.includes(keyword);
+  const isSpecificNameSearch = keyword.length >= MIN_SPECIFIC_NAME_SEARCH_LEN;
   const v2CompanyFiltered = v2Company.filter(
     (p) =>
       matchesSearch(p.placeName, "", keyword) &&
       !isExcludedName(p.placeName) &&
-      (p.categoryDepth2 !== "general" || isCategoryLikeSearch)
+      (p.categoryDepth2 !== "general" || isCategoryLikeSearch || isSpecificNameSearch)
   );
   const v2MaterialFiltered = v2Material.filter(
     (p) =>
       matchesSearch(p.placeName, "", keyword) &&
       !isExcludedName(p.placeName) &&
-      (p.categoryDepth2 !== "general" || isCategoryLikeSearch)
+      (p.categoryDepth2 !== "general" || isCategoryLikeSearch || isSpecificNameSearch)
   );
   const naverCompany = naver.filter((p) => p.categoryDepth1 === "company");
   const naverMaterial = naver.filter((p) => p.categoryDepth1 === "material");
