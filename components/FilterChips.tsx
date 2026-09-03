@@ -45,7 +45,7 @@ export default function FilterChips() {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="no-scrollbar flex gap-2 overflow-x-auto">
+      <div className="flex flex-wrap gap-2">
         <Chip active={!activeGroup} onClick={() => setActiveGroup(null)}>
           전체
         </Chip>
@@ -56,7 +56,7 @@ export default function FilterChips() {
         ))}
       </div>
       {activeGroup && (
-        <div className="no-scrollbar flex gap-2 overflow-x-auto">
+        <div className="flex flex-wrap gap-2">
           {SUB_DEFS[activeGroup].map((sub) => (
             <Chip key={sub.id} sub active={activeSub === sub.id} onClick={() => setActiveSub(sub.id)}>
               {sub.icon} {sub.label}
