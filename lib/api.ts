@@ -185,18 +185,27 @@ async function fetchOnePage(code: string, pageNo: number): Promise<{ items: Tour
   }
 }
 
+// [속도 개선] 예전엔 1페이지→2페이지→3페이지... 순서대로 하나씩 응답을 기다린 뒤에야 다음 페이지를
+// 요청했다. TourAPI는 1페이지 응답에 이미 전체 개수(totalCount)를 함께 내려주므로, 1페이지만 먼저
+// 받아서 총 몇 페이지가 필요한지 계산한 다음 나머지 페이지는 한꺼번에 병렬로 요청한다. 예를 들어
+// 5페이지가 필요한 카테고리라면 예전엔 요청 5번을 순서대로 기다렸지만, 이제는 1번(1페이지) + 1번
+// (2~5페이지 동시) — 총 2번만 기다리면 된다. 페이지가 많이 필요한 카테고리(자연공원 등)일수록
+// 체감 속도 개선폭이 크다. 가져오는 데이터 양과 MAX_PAGES 상한은 이전과 동일 — 순서만 바꿨다.
 async function fetchOneCode(code: string): Promise<TourItem[]> {
   const MAX_PAGES = 8;
-  let collected: TourItem[] = [];
-  let pageNo = 1;
-  while (pageNo <= MAX_PAGES) {
-    const res = await fetchOnePage(code, pageNo);
-    collected = collected.concat(res.items);
-    const fetchedSoFar = pageNo * 100;
-    if (res.items.length !== 100 || fetchedSoFar >= res.totalCount) break;
-    pageNo++;
+  const first = await fetchOnePage(code, 1);
+
+  if (first.items.length !== 100 || first.totalCount <= 100) {
+    return first.items;
   }
-  return collected;
+
+  const totalPages = Math.min(MAX_PAGES, Math.ceil(first.totalCount / 100));
+  if (totalPages <= 1) return first.items;
+
+  const restPageNumbers = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+  const restResults = await Promise.all(restPageNumbers.map((pageNo) => fetchOnePage(code, pageNo)));
+
+  return [first.items, ...restResults.map((r) => r.items)].flat();
 }
 
 let parkCache: Place[] | null = null;
