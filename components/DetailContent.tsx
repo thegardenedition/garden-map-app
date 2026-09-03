@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { Place, Region } from "@/lib/types";
 import { SUB_DEFS } from "@/lib/types";
 import { fetchNaverHomepage, fetchTourIntro, kakaoDirLink } from "@/lib/api";
+import { kakaoPlaceLink } from "@/lib/shareLink";
+import ShareButton from "./ShareButton";
 
 function InfoRow({ icon, label, value, muted }: { icon: string; label: string; value: string | null; muted?: boolean }) {
   return (
@@ -96,6 +98,11 @@ export default function DetailContent({ place, region }: { place: Place; region:
             홈페이지
           </a>
         )}
+        <ShareButton
+          title={place.placeName}
+          text={place.address}
+          url={kakaoPlaceLink(place.placeName, place.coordinates[1], place.coordinates[0])}
+        />
       </div>
 
       {/* [Sticky CTA] 네온 옐로우 배경 + 딥 블루 텍스트, 탭 시 scale 0.95 햅틱 애니메이션 */}
