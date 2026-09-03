@@ -1,5 +1,5 @@
 import type { GroupId, Place, ProjectPin, Region, SubId } from "./types";
-import { CATEGORY_LIKE_TERMS, classifyBiz, isExcludedName, matchesSearch } from "./classify";
+import { CATEGORY_LIKE_TERMS, UMBRELLA_SEARCH_TERMS, classifyBiz, isExcludedName, matchesSearch } from "./classify";
 
 // [네트워크 회복탄력성]
 // 이 앱은 magazinegreen.co.kr(Webflow) 배포본과 동일한 백엔드를 그대로 재사용한다.
@@ -87,13 +87,14 @@ async function fetchNaverIndependent(region: Region, keyword: string): Promise<P
   const data = await res.json();
   const docs: NaverDoc[] = data?.items ?? [];
   const out: Place[] = [];
+  const isUmbrellaSearch = UMBRELLA_SEARCH_TERMS.includes(keyword);
   for (const d of docs) {
     const name = stripHtml(d.title || "");
     const category = d.category || "";
-    if (!matchesSearch(name, category, keyword)) continue;
     if (isExcludedName(name) || isExcludedName(category)) continue;
     const cls = classifyBiz(`${name} ${category}`);
     if (!cls) continue;
+    if (!isUmbrellaSearch && !matchesSearch(name, category, keyword)) continue;
     const lat = parseFloat(d.mapy) / 10000000;
     const lng = parseFloat(d.mapx) / 10000000;
     if (!lat || !lng) continue;
@@ -285,14 +286,19 @@ export async function searchBizPlaces(region: Region, keyword: string): Promise<
   const kakaoTask = fetchKakaoCombined(region, keyword).then((docs) => {
     const seen = new Set<string>();
     const out: Place[] = [];
+    const isUmbrellaSearch = UMBRELLA_SEARCH_TERMS.includes(keyword);
     for (const d of docs) {
       if (seen.has(d.id)) continue;
       seen.add(d.id);
       const name = d.place_name || "";
-      if (!matchesSearch(name, d.category_name || "", keyword)) continue;
-      if (isExcludedName(name) || isExcludedName(d.category_name || "")) continue;
-      const cls = classifyBiz(`${name} ${d.category_name || ""}`);
+      const category = d.category_name || "";
+      if (isExcludedName(name) || isExcludedName(category)) continue;
+      const cls = classifyBiz(`${name} ${category}`);
       if (!cls) continue;
+      // ["조경"/"정원" 우산 검색어] 카테고리가 "인테리어"로만 잡힌 플랜테리어 업체처럼, 이름/
+      // 카테고리에 검색어 그대로가 없어도 classifyBiz가 이미 통과시켰다면(cls가 non-null) 그걸로
+      // 충분하다고 본다. "잔디"처럼 더 구체적인 검색어는 계속 matchesSearch로 엄격하게 거른다.
+      if (!isUmbrellaSearch && !matchesSearch(name, category, keyword)) continue;
       const lat = parseFloat(d.y);
       const lng = parseFloat(d.x);
       if (!lat || !lng) continue;
@@ -305,9 +311,22 @@ export async function searchBizPlaces(region: Region, keyword: string): Promise<
   const v2MaterialTask = fetchBizV2(region, "material");
   const naverTask = fetchNaverIndependent(region, keyword);
 
-  const [kakao, v2Company, v2Material, naver] = await Promise.all([
+  // [장애 격리] 예전엔 Promise.all을 써서, 4개 소스(카카오/자체DB-회사/자체DB-자재/네이버) 중
+  // 단 하나만 실패해도(예: 자체 DB API가 502를 내는 경우) 전체 검색이 통째로 실패해 "0곳 표시
+  // 중"으로 보였다 — 나머지 소스가 정상 응답했어도 전부 버려졌다. 실제로 이런 장애가 발생한 걸
+  // 확인했다(bizdb-v2가 502를 내는 상태). Promise.allSettled로 바꿔서, 죽은 소스는 빈 배열로
+  // 취급하고 살아있는 소스의 결과는 그대로 보여준다.
+  const [kakaoResult, v2CompanyResult, v2MaterialResult, naverResult] = await Promise.allSettled([
     kakaoTask, v2CompanyTask, v2MaterialTask, naverTask,
   ]);
+  const kakao = kakaoResult.status === "fulfilled" ? kakaoResult.value : [];
+  const v2Company = v2CompanyResult.status === "fulfilled" ? v2CompanyResult.value : [];
+  const v2Material = v2MaterialResult.status === "fulfilled" ? v2MaterialResult.value : [];
+  const naver = naverResult.status === "fulfilled" ? naverResult.value : [];
+  if (kakaoResult.status === "rejected") console.error("[searchBizPlaces] 카카오 검색 실패:", kakaoResult.reason);
+  if (v2CompanyResult.status === "rejected") console.error("[searchBizPlaces] 자체 DB(조경회사) 조회 실패:", v2CompanyResult.reason);
+  if (v2MaterialResult.status === "rejected") console.error("[searchBizPlaces] 자체 DB(조경수/자재) 조회 실패:", v2MaterialResult.reason);
+  if (naverResult.status === "rejected") console.error("[searchBizPlaces] 네이버 검색 실패:", naverResult.reason);
 
   // [조경종합 버킷 안전장치] 예전 대량 수집 당시 오분류된 데이터가 이 버킷에 몰려 있을 위험이 커서,
   // 검색어가 "조경" 계열 카테고리성 단어가 아니면 이 버킷은 DB 결과에서 아예 보여주지 않는다.
