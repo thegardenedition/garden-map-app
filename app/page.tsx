@@ -31,6 +31,7 @@ export default function Page() {
   const [submittedTerm, setSubmittedTerm] = useState("");
   const [nearbyCoords, setNearbyCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locateCoords, setLocateCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [movedCoords, setMovedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [focusTrigger, setFocusTrigger] = useState(0);
   const [locating, setLocating] = useState(false);
 
@@ -60,6 +61,7 @@ export default function Page() {
   function runSearch() {
     setNearbyCoords(null);
     setLocateCoords(null);
+    setMovedCoords(null);
     setSubmittedTerm(searchTerm.trim());
     setFocusTrigger((t) => t + 1);
     setSheetSnap("half");
@@ -76,6 +78,7 @@ export default function Page() {
         setLocating(false);
         setSubmittedTerm("");
         setLocateCoords(null);
+        setMovedCoords(null);
         setNearbyCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setFocusTrigger((t) => t + 1);
         setSheetSnap("half");
@@ -94,6 +97,19 @@ export default function Page() {
       setFocusTrigger((t) => t + 1);
     });
   }
+
+  // ["현 위치에서 재검색"] 사용자가 지도를 손으로 끌어서 다른 지역을 보고 있을 때, 그 화면
+  // 중심 좌표를 기준으로 반경 검색을 다시 돌린다. GPS 권한이 필요 없어서 handleNearby보다
+  // 훨씬 빠르고, 사용자가 "지금 화면에 보이는 이 동네"를 검색하고 싶어할 때 정확히 맞는다.
+  const handleResearchHere = useCallback(() => {
+    if (!movedCoords) return;
+    setSubmittedTerm("");
+    setLocateCoords(null);
+    setNearbyCoords(movedCoords);
+    setMovedCoords(null);
+    setFocusTrigger((t) => t + 1);
+    setSheetSnap("half");
+  }, [movedCoords, setSheetSnap]);
 
   // [예측 프리패칭] 마커/리스트 항목을 탭한 순간 상세 패널이 열리기 전에 TanStack Query 캐시를 미리 채운다.
   const onPrefetchPlace = useCallback(
@@ -135,6 +151,7 @@ export default function Page() {
       focusCoords={nearbyCoords ?? locateCoords}
       isDesktop={isDesktop}
       projectPins={projectPinsQuery.data ?? []}
+      onUserPan={setMovedCoords}
     />
   );
 
@@ -158,6 +175,14 @@ export default function Page() {
         />
         <div className="relative h-full flex-1">
           {mapCanvas}
+          {movedCoords && (
+            <button
+              onClick={handleResearchHere}
+              className="tp-caption absolute left-1/2 top-4 z-[30] -translate-x-1/2 rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+            >
+              ⟳ 현 위치에서 재검색
+            </button>
+          )}
           <button
             onClick={handleLocateOnly}
             aria-label="현재 위치"
@@ -178,6 +203,14 @@ export default function Page() {
       <div className="absolute inset-x-3 top-3 z-[20] flex flex-col gap-2">
         <TopBar onSubmit={runSearch} />
         <FilterChips />
+        {movedCoords && (
+          <button
+            onClick={handleResearchHere}
+            className="tp-caption mx-auto rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+          >
+            ⟳ 현 위치에서 재검색
+          </button>
+        )}
       </div>
 
       <div className="absolute bottom-[calc(30vh+18px)] right-3.5 z-[30] flex flex-col gap-2.5">
