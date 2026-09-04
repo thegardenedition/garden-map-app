@@ -72,6 +72,7 @@ export default function MapCanvas({
   focusCoords,
   isDesktop = false,
   projectPins = [],
+  onUserPan,
 }: {
   places: Place[];
   selectedPlaceId: string | null;
@@ -81,6 +82,7 @@ export default function MapCanvas({
   focusCoords?: { lat: number; lng: number } | null; // 있으면 첫 결과 대신 이 좌표로 이동
   isDesktop?: boolean; // 데스크탑에서는 Ctrl+스크롤로만 확대/축소되도록 제스처를 가로챈다
   projectPins?: ProjectPin[]; // 채널그린 프로젝트 게시글 — 검색과 무관하게 항상 표시
+  onUserPan?: (center: { lat: number; lng: number }) => void; // 사용자가 지도를 손으로 드래그해서 옮겼을 때만 호출("현 위치에서 재검색" 버튼 트리거용). panTo() 같은 프로그램적 이동에는 호출되지 않는다.
 }) {
   const mapDivRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
@@ -91,12 +93,17 @@ export default function MapCanvas({
   const userMarkerRef = useRef<any>(null);
   const scriptLoadedRef = useRef(false);
   const isDesktopRef = useRef(isDesktop);
+  const onUserPanRef = useRef(onUserPan);
   const hintRef = useRef<HTMLDivElement | null>(null);
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     isDesktopRef.current = isDesktop;
   }, [isDesktop]);
+
+  useEffect(() => {
+    onUserPanRef.current = onUserPan;
+  }, [onUserPan]);
 
   // [제스처 충돌 방지] 데스크탑에서만 Kakao 기본 줌을 끄고, Ctrl+스크롤일 때만 우리가 직접 확대/축소한다.
   // 맨 스크롤(Ctrl 없이)은 막아서 페이지가 튀지 않게 하고, 대신 안내 힌트를 잠깐 보여준다.
@@ -123,6 +130,14 @@ export default function MapCanvas({
         map.setMaxLevel(13);
         map.setZoomable(!isDesktopRef.current);
         mapRef.current = map;
+
+        // ["현 위치에서 재검색"] dragend는 사용자가 손으로 지도를 끌었을 때만 발생하고,
+        // panTo() 같은 프로그램적 이동(검색 결과로 자동 이동 등)에는 발생하지 않는다. 그래서
+        // "사용자가 직접 지도를 옮겼다"를 감지하는 용도로 정확히 들어맞는다.
+        kakao.maps.event.addListener(map, "dragend", () => {
+          const center = map.getCenter();
+          onUserPanRef.current?.({ lat: center.getLat(), lng: center.getLng() });
+        });
 
         // [제스처 충돌 방지] 데스크탑: 일반 스크롤은 페이지가 튀지 않게 막고 힌트만 보여준다.
         // Ctrl+스크롤일 때만 우리가 직접 지도 줌 레벨을 바꾼다. 모바일에서는 그대로 두어
