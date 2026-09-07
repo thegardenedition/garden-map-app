@@ -25,6 +25,11 @@ declare global {
 
 const GROUP_COLOR: Record<string, string> = { company: "#C9622C", material: "#0B8A5A", park: "#0115A8" };
 
+// [첫 화면 기준점] 서울 남부~경기 북부가 한 화면에 들어오는 지역 스케일.
+// 이 지도의 업체 데이터가 가장 촘촘한 구간이라(조경설계만 서울 237 + 경기 250) 첫 화면에서
+// 바로 실제 결과를 보여줄 수 있다. 사용자가 다른 지역을 보려면 축소하거나 지역 필터를 쓰면 된다.
+const SEOUL_METRO = { lat: 37.49, lng: 127.02, level: 9 };
+
 function subIcon(place: Place): string {
   const def = SUB_DEFS[place.categoryDepth1]?.find((s) => s.id === place.categoryDepth2);
   return def?.icon ?? GROUP_ICON[place.categoryDepth1] ?? "📍";
@@ -133,11 +138,48 @@ export default function MapCanvas({
         if (cancelled || !mapDivRef.current) return;
         const kakao = window.kakao;
         const map = new kakao.maps.Map(mapDivRef.current, {
-          center: new kakao.maps.LatLng(36.5, 127.8),
-          level: 13,
+          center: new kakao.maps.LatLng(36.2, 127.9),
+          level: 12,
         });
         map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
-        map.setMaxLevel(13);
+
+        // [초기 프레이밍] 예전에는 center+level 을 고정값으로 박아뒀는데, 화면 비율이 조금만
+        // 달라져도 프레임이 어긋난다. 실제로 데스크탑에서 열면 북한 전체와 중국 랴오닝·일본
+        // 규슈가 화면의 절반을 넘게 차지하고 정작 대한민국이 작게 들어갔다. 정원 지도를 열었는데
+        // 남의 나라가 먼저 보이는 건 지도로서 실패다.
+        //
+        // 고정 좌표 대신 "이 영역이 화면에 꽉 차게" 지시한다(setBounds). 화면이 넓든 좁든,
+        // 세로로 길든 가로로 길든 대한민국이 프레임을 채운다.
+        const KOREA = new kakao.maps.LatLngBounds(
+          new kakao.maps.LatLng(33.05, 125.05), // 남서: 마라도 아래 ~ 서해 도서
+          new kakao.maps.LatLng(38.62, 129.62)  // 북동: 고성 ~ 동해안
+        );
+        // 모바일은 하단 시트가 지도를 덮고 상단에 검색바/칩이 떠 있다. 그 겹치는 만큼을 여백으로
+        // 주지 않으면 지도의 "보이는 중심"과 실제 중심이 어긋나 국토가 시트 뒤로 숨는다.
+        const h = mapDivRef.current.clientHeight || 800;
+        const onDesktop = isDesktopRef.current;
+        map.setBounds(
+          KOREA,
+          onDesktop ? 28 : 132,                       // top   (모바일: 검색바 + 필터 칩)
+          28,                                          // right
+          onDesktop ? 28 : Math.round(h * 0.34),       // bottom(모바일: 바텀시트 half 높이)
+          28                                           // left
+        );
+        // 방금 맞춘 레벨이 곧 "국토 전체"다. 그보다 더 축소하면 다시 남의 나라가 들어오므로 막는다.
+        map.setMaxLevel(map.getLevel());
+
+        // [초기 뷰는 국토 전체가 아니다]
+        // 남한은 세로가 가로의 약 1.5배인데 지도 영역은 가로가 더 넓다(데스크탑 1040x900).
+        // 그래서 국토 전체를 넣으면 좌우로 1.7배의 여백이 생기고, 그 여백이 바다와 중국·일본으로
+        // 채워진다. 프레이밍 수치를 아무리 조정해도 이건 기하학적으로 피할 수 없다.
+        // 카카오맵·네이버지도도 국토 전체로 열지 않는 이유가 이것이다.
+        //
+        // 그래서 국토 전체는 "가장 축소한 상태"로만 남기고(위 setMaxLevel), 실제 첫 화면은
+        // 데이터가 가장 촘촘한 수도권을 지역 스케일로 연다. 뷰포트 조회와도 맞물려서,
+        // 첫 화면부터 표본이 아니라 그 지역 업체 전부가 뜬다.
+        // 모바일은 화면이 좁고 하단 시트가 3분의 1을 덮으므로 한 단계 더 넓게 잡는다.
+        map.setLevel(onDesktop ? SEOUL_METRO.level : SEOUL_METRO.level + 1);
+        map.setCenter(new kakao.maps.LatLng(SEOUL_METRO.lat, SEOUL_METRO.lng));
         map.setZoomable(!isDesktopRef.current);
         mapRef.current = map;
 
@@ -195,13 +237,29 @@ export default function MapCanvas({
           averageCenter: true,
           minLevel: 7,
           disableClickZoom: false,
+          // [크기로 양을 읽히게 한다] 예전엔 스타일이 하나뿐이라 5곳짜리 묶음과 800곳짜리 묶음이
+          // 똑같은 원으로 보였다. 지도에서 원의 크기는 곧 "얼마나 많은가"를 뜻하는 가장 기본적인
+          // 시각 언어인데, 그걸 버리면 사용자는 숫자를 하나하나 읽어야 한다.
+          // 10 미만 / 10~99 / 100 이상 세 단계로 나눠 한눈에 밀집도가 보이게 한다.
+          calculator: [10, 100],
           styles: [
             {
-              width: "42px", height: "42px", background: "rgba(6,16,125,.92)",
-              borderRadius: "50%", color: "#E1FC48", textAlign: "center",
-              lineHeight: "42px", fontWeight: "700", fontSize: "13px",
-              border: "3px solid #fff", boxSizing: "border-box",
-              boxShadow: "0 3px 10px rgba(0,0,0,.3)",
+              width: "34px", height: "34px", lineHeight: "34px", fontSize: "12px",
+              background: "rgba(6,16,125,.88)", borderRadius: "50%", color: "#E1FC48",
+              textAlign: "center", fontWeight: "700", border: "2px solid #fff",
+              boxSizing: "border-box", boxShadow: "0 2px 8px rgba(0,0,0,.28)",
+            },
+            {
+              width: "46px", height: "46px", lineHeight: "46px", fontSize: "13px",
+              background: "rgba(6,16,125,.92)", borderRadius: "50%", color: "#E1FC48",
+              textAlign: "center", fontWeight: "700", border: "3px solid #fff",
+              boxSizing: "border-box", boxShadow: "0 3px 10px rgba(0,0,0,.3)",
+            },
+            {
+              width: "60px", height: "60px", lineHeight: "60px", fontSize: "15px",
+              background: "rgba(6,16,125,.96)", borderRadius: "50%", color: "#E1FC48",
+              textAlign: "center", fontWeight: "800", border: "3px solid #fff",
+              boxSizing: "border-box", boxShadow: "0 4px 14px rgba(0,0,0,.34)",
             },
           ],
         });
