@@ -3,13 +3,14 @@ import { CATEGORY_LIKE_TERMS, UMBRELLA_SEARCH_TERMS, classifyBiz, isExcludedName
 
 // [네트워크 회복탄력성]
 // 이 앱은 magazinegreen.co.kr(Webflow) 배포본과 동일한 백엔드를 그대로 재사용한다.
-// - Cloudflare Worker: 카카오/네이버 로컬 검색, 국문 관광정보(TourAPI 공원) 프록시
-// - Supabase: PostGIS 기반 반경(내 주변) 검색 RPC
+// - Cloudflare Worker: 카카오/네이버 로컬 검색, 국문 관광정보(TourAPI 공원) 프록시,
+//   그리고 자체 업체 대장(D1 garden_biz_v2, 전국 6,829건) — 지역·이름·반경 조회를 모두 담당한다.
 // 별도 백엔드를 새로 만들지 않고 기존 인프라를 그대로 소비하는 것이 이번 아키텍처의 핵심 결정이다.
+//
+// [Supabase 제거] 예전에는 "내 주변에서 찾기"만 Supabase PostGIS RPC 를 따로 호출했다. 그런데
+// 그 테이블(garden_biz)에는 100행밖에 없고 전부 서울이라, 서울 밖 사용자에게는 항상 0건이었다.
+// 같은 데이터가 D1 에 전국 규모로 있으므로 원천을 하나로 합쳤다. 이제 anon key 도 필요 없다.
 const WORKER_BASE = "https://nongsaro-proxy.chgreena.workers.dev";
-const SUPABASE_URL = "https://wxfvhsmelfffpxcktlnt.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind4ZnZoc21lbGZmZnB4Y2t0bG50Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5OTgxMDMsImV4cCI6MjEwMjU3NDEwM30.3HmakcS_4EMCpHxRQ7MDph_srgN8BKSAm5XeIVXCQcg";
 
 async function fetchWithRetry(url: string, init?: RequestInit, retries = 2): Promise<Response> {
   // [TanStack Query와 별개의 저수준 재시도]
@@ -129,15 +130,39 @@ interface BizV2Row {
   grp: GroupId;
   sub: SubId;
   region: string;
+  distance_m?: number;
 }
 
-async function fetchBizV2(region: Region, group: GroupId): Promise<Place[]> {
-  const params = new URLSearchParams({ region, group });
+interface BizV2Query {
+  region?: Region;
+  group?: GroupId;
+  sub?: SubId;
+  /** 상호 부분검색. 서버에서 걸러 내려주므로 1,000건을 받아 브라우저에서 거르지 않아도 된다. */
+  q?: string;
+  /** 반경 검색. 지정하면 결과가 거리순으로 정렬되고 distanceM 이 채워진다. */
+  near?: { lat: number; lng: number; radiusKm: number };
+  limit?: number;
+}
+
+// [자체 대장 조회] 워커의 /bizdb-v2 는 전국 6,829건(garden_biz_v2)을 담고 있다.
+// 예전에는 region+group 만 넘길 수 있었고 서버가 LIMIT 1000 을 정렬 없이 잘라서,
+// "전국"으로 조회하면 수집 순서상 앞쪽인 서울·부산·대구만 나오고 전남·충남·강원·제주 등은
+// 통째로 빠졌다(경기도조차 928건 중 92건만). 이제 서버가 지역순으로 안정 정렬하고
+// total 을 함께 돌려주며, 반경/이름 검색도 서버에서 처리한다.
+async function fetchBizV2(query: BizV2Query): Promise<Place[]> {
+  const params = new URLSearchParams();
+  if (query.region) params.set("region", query.region);
+  if (query.group) params.set("group", query.group);
+  if (query.sub) params.set("sub", query.sub);
+  if (query.q) params.set("q", query.q);
+  if (query.near) params.set("near", `${query.near.lat},${query.near.lng},${query.near.radiusKm}`);
+  params.set("limit", String(query.limit ?? 500));
+
   const res = await fetchWithRetry(`${WORKER_BASE}/bizdb-v2?${params}`);
   const data = await res.json();
   const rows: BizV2Row[] = data?.results ?? [];
   return rows
-    .filter((r) => parseFloat(r.lat) && parseFloat(r.lng))
+    .filter((r) => parseFloat(String(r.lat)) && parseFloat(String(r.lng)))
     .map((r) => ({
       placeId: `v2-${r.id}`,
       categoryDepth1: r.grp,
@@ -145,12 +170,21 @@ async function fetchBizV2(region: Region, group: GroupId): Promise<Place[]> {
       placeName: r.name || "",
       address: r.addr || "",
       contact: r.tel || null,
-      coordinates: [parseFloat(r.lng), parseFloat(r.lat)],
+      coordinates: [parseFloat(String(r.lng)), parseFloat(String(r.lat))],
       homepage: r.homepage || null,
       homepageDirect: null,
       source: "kakao" as const,
-      distanceM: null,
+      distanceM: typeof r.distance_m === "number" ? r.distance_m : null,
     }));
+}
+
+// [카테고리 탐색] 검색어 없이 카테고리만으로 목록을 여는 경로.
+// 예전에는 카테고리 칩이 "이미 검색된 결과를 사후 필터링"하는 역할뿐이라, 검색어를 넣지 않으면
+// 칩을 눌러도 화면이 비어 있었다. 조경회사/자재는 우리 대장에 다 있으므로 검색어 없이도 바로 연다.
+export async function browseByCategory(region: Region, group: GroupId, sub: SubId | null): Promise<Place[]> {
+  if (group === "park") return [];
+  const places = await fetchBizV2({ region, group, sub: sub ?? undefined, limit: 500 });
+  return places.filter((p) => !isExcludedName(p.placeName));
 }
 
 const PARK_SUB_CODES: Record<string, string[]> = {
@@ -307,8 +341,15 @@ export async function searchBizPlaces(region: Region, keyword: string): Promise<
     return out;
   });
 
-  const v2CompanyTask = fetchBizV2(region, "company");
-  const v2MaterialTask = fetchBizV2(region, "material");
+  // [서버측 이름 필터] "조경"/"잔디"처럼 업종을 가리키는 우산 검색어는 상호에 그 글자가 없어도
+  // 맞는 업체가 많아서(예: "팀펄리가든") 서버에 q 를 넘기면 안 된다. 반대로 특정 상호를 찾는
+  // 검색어는 서버에서 걸러야 1,000건을 통째로 받아 브라우저에서 거르는 낭비가 사라진다.
+  const isCategoryish =
+    CATEGORY_LIKE_TERMS.includes(keyword) || UMBRELLA_SEARCH_TERMS.includes(keyword);
+  const serverQ = isCategoryish ? undefined : keyword;
+
+  const v2CompanyTask = fetchBizV2({ region, group: "company", q: serverQ });
+  const v2MaterialTask = fetchBizV2({ region, group: "material", q: serverQ });
   const naverTask = fetchNaverIndependent(region, keyword);
 
   // [장애 격리] 예전엔 Promise.all을 써서, 4개 소스(카카오/자체DB-회사/자체DB-자재/네이버) 중
@@ -372,31 +413,18 @@ export async function searchBizPlaces(region: Region, keyword: string): Promise<
 // [속도 개선] 공원 검색은 전국 데이터를 다 훑어야 해서 느리다. searchBizPlaces와 별도 쿼리로 돌려서
 // 조경회사/자재 결과를 가로막지 않게 한다. fetchAllParks 자체는 세션 내에서 캐시되므로 두 번째
 // 검색부터는 이 함수도 즉시 끝난다.
-export async function searchParks(keyword: string): Promise<Place[]> {
-  if (!keyword) return [];
+// browseAll=true 면 검색어 없이 공원/수목원 카테고리 전체를 연다(카테고리 칩만 눌렀을 때).
+export async function searchParks(keyword: string, browseAll = false): Promise<Place[]> {
+  if (!keyword && !browseAll) return [];
   const all = await fetchAllParks();
+  if (!keyword) return all;
   return sortByRelevance(
     all.filter((p) => p.placeName.includes(keyword)),
     keyword
   );
 }
 
-interface SupabaseNearbyRow {
-  id: number;
-  name: string;
-  addr: string;
-  lat: number;
-  lng: number;
-  tel: string;
-  category_path: string;
-  homepage: string;
-  grp: GroupId;
-  sub: SubId;
-  region: string;
-  distance_m: number;
-}
-
-// [내 주변 찾기 + 공원 카테고리] Supabase의 반경 검색 RPC는 조경회사/자재(garden_biz 테이블)만
+// [내 주변 찾기 + 공원 카테고리] 자체 대장(garden_biz_v2)은 조경회사/자재만
 // 갖고 있어서 공원/수목원은 애초에 대상이 아니었다. 공원 카테고리를 선택하고 "내 주변에서 찾기"를
 // 눌러도 계속 0건이었던 이유가 이거다. 별도 geo 인덱스를 새로 만드는 대신, 이미 세션에 캐시된
 // 전국 공원 좌표(fetchAllParks)를 하버사인 공식으로 직접 거리 계산해서 반경 안의 것만 골라낸다.
@@ -418,40 +446,36 @@ async function fetchNearbyParks(lat: number, lng: number, radiusM: number): Prom
     .sort((a, b) => a.distanceM! - b.distanceM!);
 }
 
-export async function searchNearby(lat: number, lng: number, radiusM = 5000): Promise<Place[]> {
-  const bizTask = fetchWithRetry(`${SUPABASE_URL}/rest/v1/rpc/nearby_garden_biz`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-    body: JSON.stringify({ center_lat: lat, center_lng: lng, radius_m: radiusM, filter_grp: null, limit_count: 60 }),
-  })
-    .then((res) => res.json())
-    .then((rows: SupabaseNearbyRow[]) =>
-      (Array.isArray(rows) ? rows : []).map((r) => {
-        const homepageLink = r.homepage || "";
-        const isKakaoLink = homepageLink.includes("place.map.kakao.com");
-        return {
-          placeId: `sb-${r.id}`,
-          categoryDepth1: r.grp,
-          categoryDepth2: r.sub,
-          placeName: r.name || "",
-          address: r.addr || "",
-          contact: r.tel || null,
-          coordinates: [r.lng, r.lat] as [number, number],
-          homepage: isKakaoLink ? homepageLink : null,
-          homepageDirect: !isKakaoLink && homepageLink ? homepageLink : null,
-          source: "kakao" as const,
-          distanceM: r.distance_m,
-        };
-      })
-    );
+// [내 주변에서 찾기]
+// 예전에는 Supabase 의 PostGIS RPC(nearby_garden_biz)를 호출했는데, 그 테이블에는 100행밖에
+// 없고 전부 서울이었다. 그래서 서울 밖에서 이 버튼을 누르면 조경회사·조경수/자재가 구조적으로
+// 0건이었다 — 정작 같은 항목이 D1(garden_biz_v2)에는 전국 6,829건 들어 있는데도.
+// 이제 워커의 /bizdb-v2?near= 로 같은 대장을 보고, 공원/수목원은 기존대로 세션 캐시에서 합친다.
+export async function searchNearby(
+  lat: number,
+  lng: number,
+  radiusM = 5000,
+  group: GroupId | null = null
+): Promise<Place[]> {
+  const near = { lat, lng, radiusKm: radiusM / 1000 };
 
-  const parkTask = fetchNearbyParks(lat, lng, radiusM);
+  const bizTask = (
+    group && group !== "park"
+      ? fetchBizV2({ near, group, limit: 200 })
+      : Promise.all([
+          fetchBizV2({ near, group: "company", limit: 200 }),
+          fetchBizV2({ near, group: "material", limit: 200 }),
+        ]).then((lists) => lists.flat())
+  ).then((places) => places.filter((p) => !isExcludedName(p.placeName)));
 
-  const [bizPlaces, parkPlaces] = await Promise.all([bizTask, parkTask]);
+  const parkTask = group && group !== "park" ? Promise.resolve([]) : fetchNearbyParks(lat, lng, radiusM);
+
+  const [bizResult, parkResult] = await Promise.allSettled([bizTask, parkTask]);
+  const bizPlaces = bizResult.status === "fulfilled" ? bizResult.value : [];
+  const parkPlaces = parkResult.status === "fulfilled" ? parkResult.value : [];
+  if (bizResult.status === "rejected") console.error("[searchNearby] 자체 DB 반경 조회 실패:", bizResult.reason);
+  if (parkResult.status === "rejected") console.error("[searchNearby] 공원 반경 조회 실패:", parkResult.reason);
+
   return [...bizPlaces, ...parkPlaces].sort((a, b) => (a.distanceM ?? Infinity) - (b.distanceM ?? Infinity));
 }
 

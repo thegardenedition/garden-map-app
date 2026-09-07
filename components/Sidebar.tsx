@@ -22,6 +22,8 @@ export default function Sidebar({
   onSelectPlace,
   onClosePlace,
   statusLabel,
+  onReset,
+  canReset,
 }: {
   onSubmit: () => void;
   onNearby: () => void;
@@ -35,6 +37,8 @@ export default function Sidebar({
   onSelectPlace: (p: Place) => void;
   onClosePlace: () => void;
   statusLabel: string; // "내 위치 · 반경 5km" 또는 "전국 · 검색어를 입력해주세요" 등, 실제 검색 상태 기준
+  onReset?: () => void;
+  canReset?: boolean;
 }) {
   const storeRegion = useGardenMapStore((s) => s.region);
   const setRegion = useGardenMapStore((s) => s.setRegion);
@@ -94,7 +98,7 @@ export default function Sidebar({
       </div>
 
       <div className="mt-3 flex-shrink-0 px-6">
-        <FilterChips />
+        <FilterChips onReset={onReset} canReset={canReset} />
       </div>
 
       <div className="mt-3 flex flex-shrink-0 items-center justify-between px-6">

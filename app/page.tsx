@@ -27,6 +27,7 @@ export default function Page() {
   const selectPlace = useGardenMapStore((s) => s.selectPlace);
   const sheetSnap = useGardenMapStore((s) => s.sheetSnap);
   const setSheetSnap = useGardenMapStore((s) => s.setSheetSnap);
+  const resetStore = useGardenMapStore((s) => s.reset);
 
   const [submittedTerm, setSubmittedTerm] = useState("");
   const [nearbyCoords, setNearbyCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -35,9 +36,9 @@ export default function Page() {
   const [focusTrigger, setFocusTrigger] = useState(0);
   const [locating, setLocating] = useState(false);
 
-  const bizQuery = useBizSearch(region, submittedTerm);
-  const parkQuery = useParkSearch(submittedTerm);
-  const nearbyQuery = useNearbySearch(nearbyCoords);
+  const bizQuery = useBizSearch(region, submittedTerm, activeGroup, activeSub);
+  const parkQuery = useParkSearch(submittedTerm, activeGroup);
+  const nearbyQuery = useNearbySearch(nearbyCoords, activeGroup);
   const projectPinsQuery = useProjectPins();
 
   const isNearbyMode = Boolean(nearbyCoords) && !submittedTerm;
@@ -56,7 +57,22 @@ export default function Page() {
   }, [rawPlaces, activeGroup, activeSub]);
 
   const selectedPlace = places.find((p) => p.placeId === selectedPlaceId) ?? null;
-  const hasSearched = isNearbyMode || submittedTerm.length > 0;
+  // 카테고리만 선택해도 결과가 열리므로(browse 모드) 그것도 "조회한 상태"로 친다.
+  const hasSearched = isNearbyMode || submittedTerm.length > 0 || Boolean(activeGroup);
+  const canReset = hasSearched || searchTerm.length > 0;
+
+  // [초기화] 스토어에 reset()이 있었지만 어떤 컴포넌트도 호출하지 않는 죽은 코드였다. 그래서
+  // 한번 검색하거나 "내 주변"에 들어가면 브라우저 새로고침 말고는 처음 상태로 돌아갈 방법이
+  // 없었다. 스토어 상태(지역/검색어/필터/선택)와 이 컴포넌트의 지역 상태(제출된 검색어,
+  // 좌표들)를 한꺼번에 되돌린다 — 둘 중 하나만 지우면 유령 상태가 남는다.
+  const handleReset = useCallback(() => {
+    resetStore();
+    setSubmittedTerm("");
+    setNearbyCoords(null);
+    setLocateCoords(null);
+    setMovedCoords(null);
+    setFocusTrigger((t) => t + 1);
+  }, [resetStore]);
 
   function runSearch() {
     setNearbyCoords(null);
@@ -172,6 +188,8 @@ export default function Page() {
           onSelectPlace={handleSelect}
           onClosePlace={() => selectPlace(null)}
           statusLabel={statusLabel}
+          onReset={handleReset}
+          canReset={canReset}
         />
         <div className="relative h-full flex-1">
           {mapCanvas}
@@ -202,7 +220,7 @@ export default function Page() {
 
       <div className="absolute inset-x-3 top-3 z-[20] flex flex-col gap-2">
         <TopBar onSubmit={runSearch} />
-        <FilterChips />
+        <FilterChips onReset={handleReset} canReset={canReset} />
         {movedCoords && (
           <button
             onClick={handleResearchHere}
