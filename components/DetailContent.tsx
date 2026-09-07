@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import type { Place, Region } from "@/lib/types";
 import { SUB_DEFS } from "@/lib/types";
+import { CategoryIcon, GROUP_COLOR } from "@/lib/icons";
 import { fetchNaverHomepage, fetchTourIntro, kakaoDirLink } from "@/lib/api";
 import { kakaoPlaceLink } from "@/lib/shareLink";
 import ShareButton from "./ShareButton";
@@ -44,8 +45,14 @@ export default function DetailContent({ place, region }: { place: Place; region:
 
   return (
     <div>
-      <span className="tp-caption mb-2 inline-block rounded-lg bg-[rgba(6,16,125,0.08)] px-3 py-1 text-[var(--color-deep-blue)]">
-        {subDef?.icon} {place.categoryDepth2 && subDef?.label}
+      <span className="tp-caption mb-2 inline-flex items-center gap-1.5 rounded-lg bg-[rgba(6,16,125,0.08)] px-3 py-1 text-[var(--color-deep-blue)]">
+        <CategoryIcon
+          group={place.categoryDepth1}
+          sub={place.categoryDepth2}
+          size={14}
+          color={GROUP_COLOR[place.categoryDepth1]}
+        />
+        {place.categoryDepth2 && subDef?.label}
       </span>
       <h3 className="tp-title mb-1 break-words text-[#0A0A23]">{place.placeName}</h3>
       <p className="tp-body mb-2.5 break-words text-[#5A5A78]">{place.address}</p>

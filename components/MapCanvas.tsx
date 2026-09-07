@@ -4,7 +4,14 @@
 import { useEffect, useRef } from "react";
 import Script from "next/script";
 import type { Place, ProjectPin } from "@/lib/types";
-import { GROUP_ICON, SUB_DEFS } from "@/lib/types";
+import {
+  PIN_DEFAULT,
+  PIN_SELECTED,
+  placePinSvg,
+  projectPinSvg,
+  svgDataUri,
+  type PinSize,
+} from "@/lib/icons";
 
 /*
  * [WebGL/Deck.gl 대신 카카오 네이티브 마커+클러스터러를 쓴 이유]
@@ -23,45 +30,41 @@ declare global {
   }
 }
 
-const GROUP_COLOR: Record<string, string> = { company: "#C9622C", material: "#0B8A5A", park: "#0115A8" };
-
 // [첫 화면 기준점] 서울 남부~경기 북부가 한 화면에 들어오는 지역 스케일.
 // 이 지도의 업체 데이터가 가장 촘촘한 구간이라(조경설계만 서울 237 + 경기 250) 첫 화면에서
 // 바로 실제 결과를 보여줄 수 있다. 사용자가 다른 지역을 보려면 축소하거나 지역 필터를 쓰면 된다.
 const SEOUL_METRO = { lat: 37.49, lng: 127.02, level: 9 };
 
-function subIcon(place: Place): string {
-  const def = SUB_DEFS[place.categoryDepth1]?.find((s) => s.id === place.categoryDepth2);
-  return def?.icon ?? GROUP_ICON[place.categoryDepth1] ?? "📍";
-}
-
-// [터치 영역] 모바일 최소 터치 타겟(44x44px) 기준을 만족하도록 44x54로 키웠다.
-// [렌더 성능] 같은 그룹/서브카테고리는 색상+아이콘이 동일하므로, 마커마다 SVG 문자열을 새로
-// 만드는 대신 (color, icon) 조합별로 MarkerImage를 캐싱해 재사용한다. 전국 단위로 마커가
-// 수백 개씩 뜨는 상황에서 동일한 이미지를 수백 번 다시 만드는 낭비를 없애 초기 렌더링을 가볍게 한다.
+/*
+ * [핀 이미지]
+ * 도형·색·아이콘은 전부 lib/icons.tsx 가 갖고 있고 여기서는 그걸 카카오 MarkerImage 로만 감싼다.
+ * 지도·필터 칩·목록·상세가 같은 그림을 쓰게 하려면 정의가 한 곳에만 있어야 한다.
+ *
+ * [앵커] 예전에는 offset 을 (22, 54) — 이미지 맨 아래로 잡았는데, 핀의 뾰족한 끝은 그보다
+ * 위에 있어서 마커가 실제 좌표보다 살짝 아래에 찍혔다. icons.tsx 가 계산한 끝점(anchorY)을 쓴다.
+ *
+ * [렌더 성능] 같은 (그룹, 소분류, 선택여부) 조합은 완전히 동일한 이미지라 조합별로 캐싱해
+ * 재사용한다. 전국 단위로 마커가 수백 개 뜰 때 같은 SVG를 수백 번 다시 만드는 낭비를 없앤다.
+ */
 const markerImageCache = new Map<string, any>();
-function markerImage(kakao: any, color: string, icon: string) {
-  const key = `${color}|${icon}`;
+function toMarkerImage(kakao: any, key: string, svg: string, size: PinSize) {
   const cached = markerImageCache.get(key);
   if (cached) return cached;
-
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="54" viewBox="0 0 44 54">` +
-    `<defs><filter id="s" x="-50%" y="-50%" width="200%" height="200%">` +
-    `<feDropShadow dx="0" dy="2" stdDeviation="1.8" flood-color="#000" flood-opacity="0.28"/>` +
-    `</filter></defs>` +
-    `<g filter="url(#s)">` +
-    `<path d="M22 3C13.2 3 6 10.2 6 19c0 11.5 16 30 16 30s16-18.5 16-30C38 10.2 30.8 3 22 3z" fill="${color}"/>` +
-    `<circle cx="22" cy="19.5" r="12.5" fill="#fff"/>` +
-    `<text x="22" y="25" font-size="15" text-anchor="middle">${icon}</text>` +
-    `</g></svg>`;
-  const image = new kakao.maps.MarkerImage(
-    "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg),
-    new kakao.maps.Size(44, 54),
-    { offset: new kakao.maps.Point(22, 54) }
-  );
+  const image = new kakao.maps.MarkerImage(svgDataUri(svg), new kakao.maps.Size(size.width, size.height), {
+    offset: new kakao.maps.Point(size.anchorX, size.anchorY),
+  });
   markerImageCache.set(key, image);
   return image;
+}
+
+function placeMarkerImage(kakao: any, place: Place, selected = false) {
+  const key = `${place.categoryDepth1}|${place.categoryDepth2}|${selected ? "on" : "off"}`;
+  return toMarkerImage(
+    kakao,
+    key,
+    placePinSvg(place.categoryDepth1, place.categoryDepth2, selected),
+    selected ? PIN_SELECTED : PIN_DEFAULT
+  );
 }
 
 export interface MapCanvasHandle {
@@ -308,7 +311,7 @@ export default function MapCanvas({
     for (const place of places) {
       const [lng, lat] = place.coordinates;
       if (!lat || !lng) continue;
-      const image = markerImage(kakao, GROUP_COLOR[place.categoryDepth1] ?? "#0115A8", subIcon(place));
+      const image = placeMarkerImage(kakao, place);
       const marker = new kakao.maps.Marker({ position: new kakao.maps.LatLng(lat, lng), image });
       kakao.maps.event.addListener(marker, "click", () => {
         onSelectPlace(place.placeId);
@@ -337,7 +340,7 @@ export default function MapCanvas({
 
     for (const pin of projectPins) {
       if (!pin.lat || !pin.lng) continue;
-      const image = markerImage(kakao, "#E1FC48", "📰");
+      const image = toMarkerImage(kakao, "project", projectPinSvg(), PIN_DEFAULT);
       const marker = new kakao.maps.Marker({ position: new kakao.maps.LatLng(pin.lat, pin.lng), image });
       kakao.maps.event.addListener(marker, "click", () => {
         window.open(pin.url, "_blank", "noopener,noreferrer");
@@ -398,7 +401,8 @@ export default function MapCanvas({
     if (clusterer) clusterer.clear();
     Object.values(markersRef.current).forEach((m) => m.setMap(null));
 
-    const image = markerImage(kakao, GROUP_COLOR[place.categoryDepth1] ?? "#0115A8", subIcon(place));
+    // 색을 바꾸면 그 핀이 어느 그룹인지 알 수 없게 되므로, 선택은 크기 + 흰 테두리로만 알린다.
+    const image = placeMarkerImage(kakao, place, true);
     const marker = new kakao.maps.Marker({
       position: new kakao.maps.LatLng(place.coordinates[1], place.coordinates[0]),
       image,

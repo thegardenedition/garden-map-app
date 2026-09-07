@@ -1,6 +1,7 @@
 "use client";
 
-import { GROUP_ICON, GROUP_LABEL, SUB_DEFS, type GroupId } from "@/lib/types";
+import { GROUP_LABEL, SUB_DEFS, type GroupId } from "@/lib/types";
+import { CategoryIcon } from "@/lib/icons";
 import { useGardenMapStore } from "@/lib/store";
 
 const GROUP_ORDER: GroupId[] = ["company", "material", "park"];
@@ -68,7 +69,10 @@ export default function FilterChips({
         )}
         {GROUP_ORDER.map((g) => (
           <Chip key={g} active={activeGroup === g} onClick={() => setActiveGroup(activeGroup === g ? null : g)}>
-            {GROUP_ICON[g]} {GROUP_LABEL[g]}
+            <span className="inline-flex items-center gap-1.5">
+              <CategoryIcon group={g} size={15} />
+              {GROUP_LABEL[g]}
+            </span>
           </Chip>
         ))}
       </div>
@@ -76,7 +80,10 @@ export default function FilterChips({
         <div className="flex flex-wrap gap-2">
           {SUB_DEFS[activeGroup].map((sub) => (
             <Chip key={sub.id} sub active={activeSub === sub.id} onClick={() => setActiveSub(sub.id)}>
-              {sub.icon} {sub.label}
+              <span className="inline-flex items-center gap-1.5">
+                <CategoryIcon group={activeGroup} sub={sub.id} size={14} />
+                {sub.label}
+              </span>
             </Chip>
           ))}
         </div>

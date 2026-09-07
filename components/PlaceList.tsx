@@ -4,6 +4,7 @@ import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Place } from "@/lib/types";
 import { SUB_DEFS } from "@/lib/types";
+import { CategoryIcon, GROUP_COLOR } from "@/lib/icons";
 import EmptyState from "./EmptyState";
 
 // [리스트 가상화] 뷰포트에 보이는 행만 렌더링해 결과가 수백~수천 건이어도 DOM 노드 수를 상수로 유지한다.
@@ -45,7 +46,14 @@ export default function PlaceList({
         {virtualizer.getVirtualItems().map((row) => {
           const place = places[row.index];
           const subLabel = SUB_DEFS[place.categoryDepth1]?.find((s) => s.id === place.categoryDepth2);
-          const icon = subLabel?.icon ?? "📍";
+          const icon = (
+            <CategoryIcon
+              group={place.categoryDepth1}
+              sub={place.categoryDepth2}
+              size={12}
+              color={GROUP_COLOR[place.categoryDepth1]}
+            />
+          );
           return (
             <button
               key={place.placeId}
@@ -61,8 +69,9 @@ export default function PlaceList({
               className="flex flex-col items-start justify-center border-b border-[#F0F1FC] px-[18px] text-left active:bg-[#F5F6FF]"
             >
               <div className="mb-1 flex items-center gap-1.5">
-                <span className="tp-caption rounded-lg bg-[rgba(6,16,125,0.08)] px-2 py-0.5 text-[9px] text-[var(--color-deep-blue)]">
-                  {icon} {subLabel?.label ?? ""}
+                <span className="tp-caption inline-flex items-center gap-1 rounded-lg bg-[rgba(6,16,125,0.08)] px-2 py-0.5 text-[9px] text-[var(--color-deep-blue)]">
+                  {icon}
+                  {subLabel?.label ?? ""}
                 </span>
                 {place.distanceM != null && (
                   <span className="tp-caption rounded-lg bg-[rgba(11,138,90,0.1)] px-2 py-0.5 text-[9px] text-[#0B8A5A]">

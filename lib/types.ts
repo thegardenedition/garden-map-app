@@ -44,29 +44,26 @@ export const GROUP_LABEL: Record<GroupId, string> = {
   park: "공원/수목원",
 };
 
-export const GROUP_ICON: Record<GroupId, string> = {
-  company: "🏢",
-  material: "🌱",
-  park: "🏞",
-};
-
-export const SUB_DEFS: Record<GroupId, { id: SubId; label: string; icon: string }[]> = {
+// [아이콘] 이모지를 전부 도려냈다. 이모지는 스스로 색을 가져 핀의 그룹 색과 충돌하고,
+// OS마다 다른 그림으로 렌더되어 통제할 수 없었다. 같은 규격의 벡터 11개를 lib/icons.tsx 에
+// 한 번만 정의해 지도·칩·목록·상세가 같은 그림을 공유한다. 여기엔 id와 label만 남긴다.
+export const SUB_DEFS: Record<GroupId, { id: SubId; label: string }[]> = {
   company: [
-    { id: "design", label: "조경설계", icon: "📐" },
-    { id: "engineering", label: "종합엔지니어링", icon: "🏗" },
-    { id: "construction", label: "조경시공", icon: "🚧" },
-    { id: "maintenance", label: "유지관리", icon: "🌿" },
-    { id: "trendy", label: "공간연출/플랜테리어", icon: "🪴" },
-    { id: "general", label: "조경종합", icon: "🌳" },
+    { id: "design", label: "조경설계" },
+    { id: "engineering", label: "종합엔지니어링" },
+    { id: "construction", label: "조경시공" },
+    { id: "maintenance", label: "유지관리" },
+    { id: "trendy", label: "공간연출/플랜테리어" },
+    { id: "general", label: "조경종합" },
   ],
   material: [
-    { id: "nursery", label: "조경수/농원", icon: "🌱" },
-    { id: "supply", label: "자재/잔디/석재", icon: "🧱" },
+    { id: "nursery", label: "조경수/농원" },
+    { id: "supply", label: "자재/잔디/석재" },
   ],
   park: [
-    { id: "city_park", label: "도시공원", icon: "🏞" },
-    { id: "natural_park", label: "자연공원", icon: "⛰" },
-    { id: "garden", label: "수목원/정원", icon: "🌷" },
+    { id: "city_park", label: "도시공원" },
+    { id: "natural_park", label: "자연공원" },
+    { id: "garden", label: "수목원/정원" },
   ],
 };
 
