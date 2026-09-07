@@ -6,6 +6,11 @@ export type GroupId = "company" | "material" | "park";
 
 export type SubId =
   | "design"
+  // [조경설계 vs 종합엔지니어링] 한국엔지니어링협회 대장에 조경 전문분야로 신고된 1,296곳 중
+  // 465곳만 조경 전담이고, 831곳은 도로·철도·구조 같은 분야를 함께 신고한 종합엔지니어링사다.
+  // 둘 다 법적으로 조경 엔지니어링을 할 수 있지만 "조경설계사무소를 찾는" 사용자에게는 전혀
+  // 다른 정보라 서브카테고리를 나눴다. 워커가 company_type 을 보고 sub 를 갈라서 내려준다.
+  | "engineering"
   | "construction"
   | "maintenance"
   | "trendy"
@@ -48,6 +53,7 @@ export const GROUP_ICON: Record<GroupId, string> = {
 export const SUB_DEFS: Record<GroupId, { id: SubId; label: string; icon: string }[]> = {
   company: [
     { id: "design", label: "조경설계", icon: "📐" },
+    { id: "engineering", label: "종합엔지니어링", icon: "🏗" },
     { id: "construction", label: "조경시공", icon: "🚧" },
     { id: "maintenance", label: "유지관리", icon: "🌿" },
     { id: "trendy", label: "공간연출/플랜테리어", icon: "🪴" },
