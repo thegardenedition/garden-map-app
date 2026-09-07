@@ -73,6 +73,7 @@ export default function MapCanvas({
   isDesktop = false,
   projectPins = [],
   onUserPan,
+  onViewportChange,
 }: {
   places: Place[];
   selectedPlaceId: string | null;
@@ -83,6 +84,10 @@ export default function MapCanvas({
   isDesktop?: boolean; // 데스크탑에서는 Ctrl+스크롤로만 확대/축소되도록 제스처를 가로챈다
   projectPins?: ProjectPin[]; // 채널그린 프로젝트 게시글 — 검색과 무관하게 항상 표시
   onUserPan?: (center: { lat: number; lng: number }) => void; // 사용자가 지도를 손으로 드래그해서 옮겼을 때만 호출("현 위치에서 재검색" 버튼 트리거용). panTo() 같은 프로그램적 이동에는 호출되지 않는다.
+  // [뷰포트 조회] 이동/줌이 멈출 때마다(idle) 현재 화면 영역을 알려준다. dragend와 달리
+  // 프로그램적 이동(panTo, 검색 결과로 자동 이동)에도 발생해야 한다 — 어떤 이유로 화면이
+  // 바뀌었든 그 영역의 데이터를 다시 받아야 하기 때문이다.
+  onViewportChange?: (viewport: { bbox: [number, number, number, number]; level: number }) => void;
 }) {
   const mapDivRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
@@ -94,6 +99,7 @@ export default function MapCanvas({
   const scriptLoadedRef = useRef(false);
   const isDesktopRef = useRef(isDesktop);
   const onUserPanRef = useRef(onUserPan);
+  const onViewportChangeRef = useRef(onViewportChange);
   const hintRef = useRef<HTMLDivElement | null>(null);
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -104,6 +110,10 @@ export default function MapCanvas({
   useEffect(() => {
     onUserPanRef.current = onUserPan;
   }, [onUserPan]);
+
+  useEffect(() => {
+    onViewportChangeRef.current = onViewportChange;
+  }, [onViewportChange]);
 
   // [제스처 충돌 방지] 데스크탑에서만 Kakao 기본 줌을 끄고, Ctrl+스크롤일 때만 우리가 직접 확대/축소한다.
   // 맨 스크롤(Ctrl 없이)은 막아서 페이지가 튀지 않게 하고, 대신 안내 힌트를 잠깐 보여준다.
@@ -138,6 +148,23 @@ export default function MapCanvas({
           const center = map.getCenter();
           onUserPanRef.current?.({ lat: center.getLat(), lng: center.getLng() });
         });
+
+        // [뷰포트 조회] idle은 드래그·줌·panTo가 모두 끝나 지도가 멈춘 뒤 한 번 발생한다.
+        // 이동 중에 계속 쏘지 않으므로 여기서 별도 스로틀을 걸 필요가 없고, 실제 재조회 여부는
+        // 상위(useViewportSearch)에서 bbox를 격자에 스냅해 판단한다 — 조금 움직였다고 매번
+        // 네트워크를 때리면 안 되기 때문이다.
+        const emitViewport = () => {
+          const b = map.getBounds();
+          if (!b) return;
+          const sw = b.getSouthWest();
+          const ne = b.getNorthEast();
+          onViewportChangeRef.current?.({
+            bbox: [sw.getLng(), sw.getLat(), ne.getLng(), ne.getLat()],
+            level: map.getLevel(),
+          });
+        };
+        kakao.maps.event.addListener(map, "idle", emitViewport);
+        emitViewport(); // 최초 1회 — 지도가 처음 그려진 직후의 화면도 조회 대상이다.
 
         // [제스처 충돌 방지] 데스크탑: 일반 스크롤은 페이지가 튀지 않게 막고 힌트만 보여준다.
         // Ctrl+스크롤일 때만 우리가 직접 지도 줌 레벨을 바꾼다. 모바일에서는 그대로 두어

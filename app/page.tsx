@@ -10,7 +10,15 @@ import PlaceList from "@/components/PlaceList";
 import PlaceDetailSheet from "@/components/PlaceDetailSheet";
 import Sidebar from "@/components/Sidebar";
 import { useGardenMapStore } from "@/lib/store";
-import { useBizSearch, useParkSearch, useNearbySearch, useProjectPins } from "@/lib/queries";
+import {
+  useBizSearch,
+  useParkSearch,
+  useNearbySearch,
+  useBrowseSearch,
+  useProjectPins,
+  VIEWPORT_MAX_LEVEL,
+  type Viewport,
+} from "@/lib/queries";
 import { useIsDesktop } from "@/lib/useIsDesktop";
 import { fetchNaverHomepage, fetchTourIntro } from "@/lib/api";
 import type { Place } from "@/lib/types";
@@ -35,20 +43,37 @@ export default function Page() {
   const [movedCoords, setMovedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [focusTrigger, setFocusTrigger] = useState(0);
   const [locating, setLocating] = useState(false);
+  // 지도가 멈출 때마다(idle) MapCanvas가 알려주는 현재 화면 영역. 탐색 모드의 조회 범위가 된다.
+  const [viewport, setViewport] = useState<Viewport | null>(null);
 
-  const bizQuery = useBizSearch(region, submittedTerm, activeGroup, activeSub);
-  const parkQuery = useParkSearch(submittedTerm, activeGroup);
+  // [세 가지 모드는 배타적이다]
+  //  - 검색:   검색어가 있을 때. 카카오/네이버/자체DB를 합쳐 조회한다.
+  //  - 내 주변: 위치를 잡았을 때. 반경 5km를 거리순으로.
+  //  - 탐색:   위 둘 다 아닐 때의 기본값. 지도가 보여주는 것을 그대로 조회한다.
+  // 셋이 동시에 켜지면 같은 화면에 두 소스가 겹쳐 중복 마커가 생기므로 반드시 하나만 쓴다.
+  const isNearbyMode = Boolean(nearbyCoords) && !submittedTerm;
+  const isSearchMode = submittedTerm.length > 0;
+  const isBrowseMode = !isNearbyMode && !isSearchMode;
+
+  const bizQuery = useBizSearch(region, submittedTerm);
+  const parkQuery = useParkSearch(submittedTerm);
   const nearbyQuery = useNearbySearch(nearbyCoords, activeGroup);
+  const browseQuery = useBrowseSearch(region, activeGroup, activeSub, viewport, isBrowseMode);
   const projectPinsQuery = useProjectPins();
 
-  const isNearbyMode = Boolean(nearbyCoords) && !submittedTerm;
   const rawPlaces = useMemo(() => {
     if (isNearbyMode) return nearbyQuery.data ?? [];
+    if (isBrowseMode) return browseQuery.data ?? [];
     return [...(bizQuery.data ?? []), ...(parkQuery.data ?? [])];
-  }, [isNearbyMode, nearbyQuery.data, bizQuery.data, parkQuery.data]);
+  }, [isNearbyMode, isBrowseMode, nearbyQuery.data, browseQuery.data, bizQuery.data, parkQuery.data]);
+
   // [체감 속도] 로딩 표시는 빠른 조경회사/자재 쿼리 기준으로만 판단한다. 공원 데이터는 뒤에서
   // 채워지며, 다 로드되기를 기다리지 않고 화면을 먼저 보여준다.
-  const isLoading = isNearbyMode ? nearbyQuery.isLoading : bizQuery.isLoading;
+  const isLoading = isNearbyMode
+    ? nearbyQuery.isLoading
+    : isBrowseMode
+      ? browseQuery.isLoading
+      : bizQuery.isLoading;
 
   const places: Place[] = useMemo(() => {
     const list = rawPlaces ?? [];
@@ -57,9 +82,10 @@ export default function Page() {
   }, [rawPlaces, activeGroup, activeSub]);
 
   const selectedPlace = places.find((p) => p.placeId === selectedPlaceId) ?? null;
-  // 카테고리만 선택해도 결과가 열리므로(browse 모드) 그것도 "조회한 상태"로 친다.
-  const hasSearched = isNearbyMode || submittedTerm.length > 0 || Boolean(activeGroup);
-  const canReset = hasSearched || searchTerm.length > 0;
+  // 이제 지도를 보고 있는 것만으로도 데이터가 흐르므로(탐색 모드) 항상 "조회한 상태"다.
+  // "검색어를 입력해주세요" 빈 화면은 더 이상 기본값이 아니다.
+  const hasSearched = isNearbyMode || isSearchMode || isBrowseMode;
+  const canReset = isNearbyMode || isSearchMode || Boolean(activeGroup) || searchTerm.length > 0;
 
   // [초기화] 스토어에 reset()이 있었지만 어떤 컴포넌트도 호출하지 않는 죽은 코드였다. 그래서
   // 한번 검색하거나 "내 주변"에 들어가면 브라우저 새로고침 말고는 처음 상태로 돌아갈 방법이
@@ -153,9 +179,14 @@ export default function Page() {
   }
 
   const activeGroupLabel = activeGroup ? GROUP_LABEL[activeGroup] : null;
+  const isViewportScope = isBrowseMode && Boolean(viewport) && (viewport as Viewport).level <= VIEWPORT_MAX_LEVEL;
   const statusLabel = isNearbyMode
     ? "내 위치 · 반경 5km"
-    : region + (submittedTerm ? ` · "${submittedTerm}"` : " · 검색어를 입력해주세요");
+    : isSearchMode
+      ? `${region} · "${submittedTerm}"`
+      : isViewportScope
+        ? "지금 보이는 지도 영역"
+        : `${region} · 지역별 분포 (확대하면 전부 표시)`;
 
   const mapCanvas = (
     <MapCanvas
@@ -168,6 +199,7 @@ export default function Page() {
       isDesktop={isDesktop}
       projectPins={projectPinsQuery.data ?? []}
       onUserPan={setMovedCoords}
+      onViewportChange={setViewport}
     />
   );
 

@@ -1,13 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import type { GroupId, Place, Region, SubId } from "./types";
-import { browseByCategory, searchBizPlaces, searchNearby, searchParks, fetchProjectPins } from "./api";
+import type { Bbox } from "./api";
+import {
+  browseByBbox,
+  browseByCategory,
+  searchBizPlaces,
+  searchNearby,
+  searchParks,
+  fetchProjectPins,
+} from "./api";
 
 // [디바운스 / 스로틀]
 // 텍스트 입력(검색어)은 Debounce 300ms: 타이핑이 끝난 뒤에만 API를 호출해 불필요한 요청을 막는다.
-// 지도 Panning은 Throttle 100ms로 별도 처리(MapCanvas 내부)하며, 여기서는 쿼리 트리거만 다룬다.
+// 지도 이동은 카카오 idle 이벤트가 이미 "멈춤"을 보장하므로 별도 디바운스 없이,
+// 아래 snapBbox로 재조회 여부를 판단한다.
 export function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -17,26 +26,42 @@ export function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
-// [카테고리 탐색을 1급 쿼리로 승격]
-// 예전에는 `enabled: keyword.length > 0` 이라 검색어가 없으면 아무것도 조회하지 않았고,
-// 카테고리 칩은 이미 받아온 결과를 사후 필터링하는 역할뿐이었다. 그래서 "조경회사 전체를
-// 보고 싶다"는 가장 흔한 의도가 아예 표현 불가능했다(칩만 누르면 빈 화면).
-// 이제 검색어가 없어도 그룹이 선택돼 있으면 자체 대장에서 그 카테고리를 통째로 연다.
-export function useBizSearch(
-  region: Region,
-  keyword: string,
-  group: GroupId | null,
-  sub: SubId | null
-): UseQueryResult<Place[]> {
+// 카카오 줌 레벨은 숫자가 작을수록 확대다. 이 레벨보다 확대돼 있으면 화면 영역(bbox) 조회로,
+// 그보다 축소돼 있으면(= 여러 시도가 한 화면에) 전국 균등 표본으로 전환한다.
+// 전국 뷰에서 bbox로 조회하면 결국 3,141건 중 500건을 이름순으로 자르는 셈이라
+// 특정 지역만 남는 문제가 되돌아오기 때문에, 축소 상태에서는 서버의 지역 균등 분배를 쓴다.
+export const VIEWPORT_MAX_LEVEL = 10;
+
+export interface Viewport {
+  bbox: Bbox;
+  level: number;
+}
+
+// [재조회 억제] 지도를 조금 움직일 때마다 네트워크를 때리면 안 된다. 화면 영역을 격자에 스냅해서
+// 같은 칸 안에서 움직이는 동안에는 쿼리 키가 그대로 유지되도록 한다(TanStack Query가 캐시로 응답).
+// 격자 크기는 현재 화면 폭의 약 절반이고, 화면 폭이 미세하게 흔들려도 칸이 바뀌지 않도록
+// 2의 거듭제곱으로 양자화한다. 결과적으로 요청하는 영역은 실제 화면보다 조금 넓어서(패딩),
+// 살짝 밀어낸 가장자리 데이터도 이미 손에 들고 있다.
+export function snapBbox([minLng, minLat, maxLng, maxLat]: Bbox): Bbox {
+  const pow2 = (v: number) => Math.pow(2, Math.round(Math.log2(Math.max(v, 1e-6))));
+  const stepLng = pow2((maxLng - minLng) / 2);
+  const stepLat = pow2((maxLat - minLat) / 2);
+  const round = (v: number) => Number(v.toFixed(5));
+  return [
+    round(Math.floor(minLng / stepLng) * stepLng),
+    round(Math.floor(minLat / stepLat) * stepLat),
+    round(Math.ceil(maxLng / stepLng) * stepLng),
+    round(Math.ceil(maxLat / stepLat) * stepLat),
+  ];
+}
+
+export function useBizSearch(region: Region, keyword: string): UseQueryResult<Place[]> {
   const debouncedKeyword = useDebouncedValue(keyword, 300);
   const term = debouncedKeyword.trim();
-  const browseMode = term.length === 0 && Boolean(group) && group !== "park";
-
   return useQuery({
-    queryKey: ["biz-places", region, term, browseMode ? group : null, browseMode ? sub : null],
-    queryFn: () =>
-      browseMode ? browseByCategory(region, group as GroupId, sub) : searchBizPlaces(region, term),
-    enabled: term.length > 0 || browseMode,
+    queryKey: ["biz-places", region, term],
+    queryFn: () => searchBizPlaces(region, term),
+    enabled: term.length > 0,
     // [지수 백오프] TanStack Query 자체 재시도 — 네트워크 계층(api.ts)의 재시도와는 다른 레이어(스키마/서버 오류 대응)
     retry: 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
@@ -44,19 +69,51 @@ export function useBizSearch(
   });
 }
 
-// [속도 개선] 전국 공원 데이터를 다 훑어야 해서 느리다. useBizSearch와 별개 쿼리로 돌려서
-// 조경회사/자재 결과가 먼저 뜨도록 하고, 공원은 준비되는 대로 뒤에서 채워진다.
-export function useParkSearch(keyword: string, group: GroupId | null): UseQueryResult<Place[]> {
+// [속도 개선] 공원은 전국 데이터를 다 훑어야 해서 느리다. useBizSearch와 별개 쿼리로 돌려서
+// 조경회사/자재 결과를 가로막지 않게 한다. fetchAllParks는 세션 내에서 캐시된다.
+export function useParkSearch(keyword: string): UseQueryResult<Place[]> {
   const debouncedKeyword = useDebouncedValue(keyword, 300);
   const term = debouncedKeyword.trim();
-  const browseAll = term.length === 0 && group === "park";
   return useQuery({
-    queryKey: ["park-places", term, browseAll],
-    queryFn: () => searchParks(term, browseAll),
-    enabled: term.length > 0 || browseAll,
+    queryKey: ["park-places", term],
+    queryFn: () => searchParks(term),
+    enabled: term.length > 0,
     retry: 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     staleTime: 5 * 60_000,
+  });
+}
+
+// [탐색 조회] 검색어 없이 지도를 보고 있을 때의 데이터 공급원.
+// 확대 상태면 화면 영역 전체를, 축소 상태면 전국 균등 표본을 가져온다.
+// 이 하나가 켜져 있는 동안 검색 쿼리는 꺼져 있어야 중복 요청이 없다(page.tsx에서 배타 처리).
+export function useBrowseSearch(
+  region: Region,
+  group: GroupId | null,
+  sub: SubId | null,
+  viewport: Viewport | null,
+  enabled: boolean
+): UseQueryResult<Place[]> {
+  const useBbox = Boolean(viewport) && (viewport as Viewport).level <= VIEWPORT_MAX_LEVEL;
+  const snapped = useMemo(
+    () => (useBbox && viewport ? snapBbox(viewport.bbox) : null),
+    [useBbox, viewport]
+  );
+
+  return useQuery({
+    queryKey: useBbox
+      ? ["browse", "bbox", snapped, group, sub]
+      : ["browse", "nationwide", region, group, sub],
+    queryFn: () =>
+      useBbox && snapped
+        ? browseByBbox(snapped, group, sub)
+        : browseByCategory(region, group, sub),
+    enabled: enabled && (!useBbox || Boolean(snapped)),
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
+    staleTime: 5 * 60_000,
+    // 지도를 움직이는 동안 목록이 빈 화면으로 깜빡이지 않도록 직전 결과를 유지한다.
+    placeholderData: (prev) => prev,
   });
 }
 

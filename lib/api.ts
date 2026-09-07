@@ -141,8 +141,13 @@ interface BizV2Query {
   q?: string;
   /** 반경 검색. 지정하면 결과가 거리순으로 정렬되고 distanceM 이 채워진다. */
   near?: { lat: number; lng: number; radiusKm: number };
+  /** 지도 화면 영역 검색. [minLng, minLat, maxLng, maxLat] */
+  bbox?: Bbox;
   limit?: number;
 }
+
+/** [minLng, minLat, maxLng, maxLat] */
+export type Bbox = [number, number, number, number];
 
 // [자체 대장 조회] 워커의 /bizdb-v2 는 전국 6,829건(garden_biz_v2)을 담고 있다.
 // 예전에는 region+group 만 넘길 수 있었고 서버가 LIMIT 1000 을 정렬 없이 잘라서,
@@ -156,6 +161,7 @@ async function fetchBizV2(query: BizV2Query): Promise<Place[]> {
   if (query.sub) params.set("sub", query.sub);
   if (query.q) params.set("q", query.q);
   if (query.near) params.set("near", `${query.near.lat},${query.near.lng},${query.near.radiusKm}`);
+  if (query.bbox) params.set("bbox", query.bbox.join(","));
   params.set("limit", String(query.limit ?? 500));
 
   const res = await fetchWithRetry(`${WORKER_BASE}/bizdb-v2?${params}`);
@@ -181,10 +187,50 @@ async function fetchBizV2(query: BizV2Query): Promise<Place[]> {
 // [카테고리 탐색] 검색어 없이 카테고리만으로 목록을 여는 경로.
 // 예전에는 카테고리 칩이 "이미 검색된 결과를 사후 필터링"하는 역할뿐이라, 검색어를 넣지 않으면
 // 칩을 눌러도 화면이 비어 있었다. 조경회사/자재는 우리 대장에 다 있으므로 검색어 없이도 바로 연다.
-export async function browseByCategory(region: Region, group: GroupId, sub: SubId | null): Promise<Place[]> {
-  if (group === "park") return [];
-  const places = await fetchBizV2({ region, group, sub: sub ?? undefined, limit: 500 });
-  return places.filter((p) => !isExcludedName(p.placeName));
+// 카테고리 칩만 눌렀거나(그룹 지정), 아무것도 안 눌렀지만 지도가 축소돼 있을 때(그룹 null)의 조회.
+// 서버가 시도별로 균등하게 잘라서 내려주므로 전국 분포가 한눈에 보인다.
+export async function browseByCategory(
+  region: Region,
+  group: GroupId | null,
+  sub: SubId | null
+): Promise<Place[]> {
+  if (group === "park") return searchParks("", true);
+  const groups: GroupId[] = group ? [group] : ["company", "material"];
+  const lists = await Promise.all(
+    groups.map((g) => fetchBizV2({ region, group: g, sub: sub ?? undefined, limit: 500 }))
+  );
+  return lists.flat().filter((p) => !isExcludedName(p.placeName));
+}
+
+// [뷰포트 조회] 지도에 실제로 보이는 영역만 가져온다.
+//
+// 왜 필요한가: 지역 단위 조회는 아무리 균등 분배를 해도 결국 표본이다. 전국 조경회사 3,141건을
+// 500건으로 잘라 시도별 30건씩 보여주면, 사용자가 자기 동네를 확대해도 그 동네 업체가 30건 중
+// 하나로만 남아 "우리 동네엔 왜 없냐"가 된다. 화면 영역으로 조회하면 확대할수록 그 안의 업체가
+// 전부 나온다 — 실측으로 서울 도심 46건, 경기남부 474건, 제주 89건이 잘림 없이 다 온다.
+//
+// [공원은 명시적으로 고를 때만] 공원/수목원은 TourAPI 쪽이라 서버 bbox 필터가 없고, 전국 목록을
+// 받으려면 코드 11종 x 페이지를 훑는 대량 팬아웃이 한 번 필요하다. 이걸 기본 탐색에 섞으면
+// 지도를 켜자마자 수십 번의 요청이 나가므로, "공원/수목원" 칩을 직접 눌렀을 때만 불러온다.
+// 그때는 세션 캐시(fetchAllParks)를 화면 영역으로 거르기만 하면 되므로 이후 비용이 없다.
+export async function browseByBbox(bbox: Bbox, group: GroupId | null, sub: SubId | null): Promise<Place[]> {
+  const [minLng, minLat, maxLng, maxLat] = bbox;
+  const inBox = (p: Place) =>
+    p.coordinates[0] >= minLng &&
+    p.coordinates[0] <= maxLng &&
+    p.coordinates[1] >= minLat &&
+    p.coordinates[1] <= maxLat;
+
+  if (group === "park") {
+    const all = await fetchAllParks();
+    return all.filter(inBox);
+  }
+
+  const groups: GroupId[] = group ? [group] : ["company", "material"];
+  const lists = await Promise.all(
+    groups.map((g) => fetchBizV2({ bbox, group: g, sub: sub ?? undefined, limit: 500 }))
+  );
+  return mergeDedup(lists.flat().filter((p) => !isExcludedName(p.placeName)));
 }
 
 const PARK_SUB_CODES: Record<string, string[]> = {
