@@ -31,11 +31,17 @@ export interface Place {
   coordinates: [number, number]; // [lng, lat] — 스펙 payload 순서를 그대로 따름
   homepage: string | null;
   homepageDirect: string | null; // 네이버 검색으로 이미 확보된 링크면 추가 조회 없이 바로 사용
-  source: "kakao" | "tourapi";
+  // registry = 한국수목원정원관리원 대장(수목원 70 + 정원 80). 외부 조회 없이 자체 필드로
+  // 상세를 채우므로 카카오/투어API 후속 요청을 걸지 않는다.
+  source: "kakao" | "tourapi" | "registry";
   distanceM: number | null; // 내 주변 찾기(반경 검색)일 때만 채워짐
   usetime?: string | null;
   restdate?: string | null;
   parking?: string | null;
+  // 아래 셋은 대장에만 있는 값이다. 투어API는 입장료·반려동물 동반 여부를 내려주지 않는다.
+  fees?: { adult?: number; youth?: number; child?: number; disabled?: number };
+  petAllowed?: boolean;
+  species?: string[]; // 봄·여름·가을·겨울 대표 수종
 }
 
 export const GROUP_LABEL: Record<GroupId, string> = {

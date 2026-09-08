@@ -1,5 +1,6 @@
 import type { GroupId, Place, ProjectPin, Region, SubId } from "./types";
 import { CATEGORY_LIKE_TERMS, UMBRELLA_SEARCH_TERMS, classifyBiz, isExcludedName, matchesSearch } from "./classify";
+import parkRegistryRaw from "./park-registry.json";
 
 // [네트워크 회복탄력성]
 // 이 앱은 magazinegreen.co.kr(Webflow) 배포본과 동일한 백엔드를 그대로 재사용한다.
@@ -289,6 +290,63 @@ async function fetchOneCode(code: string): Promise<TourItem[]> {
   return [first.items, ...restResults.map((r) => r.items)].flat();
 }
 
+/*
+ * [수목원·정원 대장]
+ * 공원 레이어는 원래 한국관광공사 TourAPI 하나만 봤다. 관광 분류라 "정원"으로 묶인 1,300여 곳을
+ * 폭넓게 주지만, 입장료·휴관일·반려동물 동반 가능 여부처럼 실제로 찾아가기 전에 알아야 하는
+ * 값은 내려주지 않는다. 한국수목원정원관리원 대장(수목원 70 + 정원 80)은 그 값들을 갖고 있고
+ * 좌표도 이미 붙어 있어 지오코딩이 필요 없다.
+ *
+ * 그래서 다른 대장들과 같은 방식으로 융합한다 — 대장을 먼저 깔고, 이름이나 위치가 겹치는
+ * TourAPI 항목은 버린다(대장 우선). 겹치지 않는 TourAPI 항목은 그대로 남는다.
+ * 대조해 보니 150곳 중 80곳은 TourAPI 에도 있고 70곳은 대장에만 있다(수목원 14 + 정원 56).
+ */
+interface RegistryPark {
+  id: string; name: string; kind: "arboretum" | "garden";
+  addr: string; region: string; lat: number; lng: number;
+  tel?: string; homepage?: string; restdate?: string; pet?: boolean;
+  free?: boolean; fees?: { adult?: number; youth?: number; child?: number; disabled?: number };
+  species?: string[];
+}
+
+function registryParks(): Place[] {
+  return (parkRegistryRaw as RegistryPark[]).map((r) => ({
+    placeId: `reg-${r.id}`,
+    categoryDepth1: "park" as const,
+    categoryDepth2: "garden" as const,
+    placeName: r.name,
+    address: r.addr,
+    contact: r.tel ?? null,
+    coordinates: [r.lng, r.lat] as [number, number],
+    homepage: r.homepage ?? null,
+    // 대장이 홈페이지를 갖고 있으므로 네이버에 다시 물어볼 필요가 없다.
+    homepageDirect: r.homepage ?? null,
+    source: "registry" as const,
+    distanceM: null,
+    restdate: r.restdate ?? null,
+    fees: r.fees,
+    petAllowed: r.pet,
+    species: r.species,
+  }));
+}
+
+// 이름 표기가 조금씩 다르다("정남진수목원" vs "정남진 수목원", "화담숲" vs "곤지암수목원(화담숲)").
+// 괄호·공백·가운뎃점을 털어낸 뒤 비교하고, 그래도 안 걸리면 300m 안에서 한쪽 이름이 다른 쪽에
+// 포함되는지를 본다. 순수 거리만으로 지우면 한 공원 안의 별개 시설까지 함께 사라진다.
+function normalizeParkName(name: string): string {
+  return (name || "").replace(/\(.*?\)|\[.*?\]/g, "").replace(/[\s·・,'"\-—–_/]/g, "");
+}
+function isSamePark(a: Place, b: Place): boolean {
+  const na = normalizeParkName(a.placeName);
+  const nb = normalizeParkName(b.placeName);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const dLat = (a.coordinates[1] - b.coordinates[1]) * 111_000;
+  const dLng = (a.coordinates[0] - b.coordinates[0]) * 88_000;
+  const near = Math.hypot(dLat, dLng) < 300;
+  return near && (na.includes(nb) || nb.includes(na));
+}
+
 let parkCache: Place[] | null = null;
 async function fetchAllParks(): Promise<Place[]> {
   if (parkCache) return parkCache;
@@ -319,11 +377,15 @@ async function fetchAllParks(): Promise<Place[]> {
   );
   const all = bySub.flat();
   const seen = new Set<string>();
-  parkCache = all.filter((p) => {
+  const tour = all.filter((p) => {
     if (seen.has(p.placeId)) return false;
     seen.add(p.placeId);
     return Boolean(p.coordinates[0] && p.coordinates[1]);
   });
+
+  const registry = registryParks();
+  const tourOnly = tour.filter((t) => !registry.some((r) => isSamePark(r, t)));
+  parkCache = [...registry, ...tourOnly];
   return parkCache;
 }
 

@@ -19,6 +19,17 @@ function InfoRow({ icon, label, value, muted }: { icon: string; label: string; v
   );
 }
 
+// 대장은 성인/청소년/어린이/장애인 요금을 따로 준다. 다 있는 곳도, 성인만 있는 곳도 있어서
+// 있는 것만 붙여 한 줄로 만든다. 요금 항목이 아예 없으면 무료로 본다(대장의 입장료여부 = N).
+const FEE_LABEL: Record<string, string> = { adult: "성인", youth: "청소년", child: "어린이", disabled: "장애인" };
+function formatFees(fees: Place["fees"]): string {
+  if (!fees) return "무료";
+  const parts = (Object.keys(FEE_LABEL) as (keyof NonNullable<Place["fees"]>)[])
+    .filter((k) => typeof fees[k] === "number")
+    .map((k) => `${FEE_LABEL[k]} ${fees[k]!.toLocaleString()}원`);
+  return parts.length ? parts.join(" · ") : "무료";
+}
+
 function truncateUrl(url: string, maxLen: number) {
   const display = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
   return display.length > maxLen ? display.slice(0, maxLen) + "…" : display;
@@ -57,7 +68,26 @@ export default function DetailContent({ place, region }: { place: Place; region:
       <h3 className="tp-title mb-1 break-words text-[#0A0A23]">{place.placeName}</h3>
       <p className="tp-body mb-2.5 break-words text-[#5A5A78]">{place.address}</p>
 
-      {place.source === "tourapi" ? (
+      {place.source === "registry" ? (
+        /* [대장 출처] 한국수목원정원관리원이 직접 관리하는 값이라 외부에 다시 물어볼 필요가 없다.
+           투어API가 주지 않는 입장료·반려동물 동반 여부를 여기서만 보여줄 수 있다. */
+        <div>
+          <InfoRow icon="☎" label="전화" value={place.contact} muted={!place.contact} />
+          <InfoRow icon="💳" label="입장료" value={formatFees(place.fees)} />
+          <InfoRow icon="📅" label="휴관일" value={place.restdate ?? null} muted={!place.restdate} />
+          <InfoRow icon="🐾" label="반려동물" value={place.petAllowed ? "동반 가능" : "동반 불가"} muted={!place.petAllowed} />
+          {place.species?.some(Boolean) && (
+            <InfoRow icon="🌿" label="대표수종" value={place.species.filter(Boolean).join(" / ")} />
+          )}
+          <InfoRow
+            icon="🔗"
+            label="홈페이지"
+            value={place.homepageDirect ? truncateUrl(place.homepageDirect, 30) : null}
+            muted={!place.homepageDirect}
+          />
+          <InfoRow icon="📍" label="출처" value="한국수목원정원관리원" />
+        </div>
+      ) : place.source === "tourapi" ? (
         <div>
           <InfoRow icon="☎" label="전화" value={place.contact || tourInfo.data?.tel || null} muted={!place.contact && !tourInfo.data?.tel} />
           <InfoRow icon="🕐" label="이용시간" value={tourInfo.data?.usetime ?? null} muted={!tourInfo.data?.usetime} />
