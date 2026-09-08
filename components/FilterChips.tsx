@@ -132,17 +132,22 @@ export default function FilterChips({
           <SubChip group={activeGroup} active={!activeSub} onClick={() => setActiveSub(null)}>
             전체
           </SubChip>
-          {SUB_DEFS[activeGroup].map((sub) => (
-            <SubChip
-              key={sub.id}
-              group={activeGroup}
-              sub={sub.id}
-              active={activeSub === sub.id}
-              onClick={() => setActiveSub(sub.id)}
-            >
-              {sub.label}
-            </SubChip>
-          ))}
+          {/* browsable: false 인 소분류는 칩으로 내걸지 않는다 — 지금은 "조경종합"뿐이고,
+              이유는 lib/types.ts 의 해당 항목에 적어 뒀다. 이미 선택돼 있다면(예전 상태가
+              남아 있는 경우) 끄지 못하는 상태가 되므로 그때는 예외적으로 보여준다. */}
+          {SUB_DEFS[activeGroup]
+            .filter((sub) => sub.browsable !== false || activeSub === sub.id)
+            .map((sub) => (
+              <SubChip
+                key={sub.id}
+                group={activeGroup}
+                sub={sub.id}
+                active={activeSub === sub.id}
+                onClick={() => setActiveSub(sub.id)}
+              >
+                {sub.label}
+              </SubChip>
+            ))}
         </div>
       )}
     </div>

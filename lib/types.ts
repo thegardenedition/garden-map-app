@@ -47,14 +47,24 @@ export const GROUP_LABEL: Record<GroupId, string> = {
 // [아이콘] 이모지를 전부 도려냈다. 이모지는 스스로 색을 가져 핀의 그룹 색과 충돌하고,
 // OS마다 다른 그림으로 렌더되어 통제할 수 없었다. 같은 규격의 벡터 11개를 lib/icons.tsx 에
 // 한 번만 정의해 지도·칩·목록·상세가 같은 그림을 공유한다. 여기엔 id와 label만 남긴다.
-export const SUB_DEFS: Record<GroupId, { id: SubId; label: string }[]> = {
+// browsable: false 는 "필터 칩으로 내걸지는 않지만 라벨은 필요한" 소분류를 뜻한다.
+// 목록·상세는 SUB_DEFS 에서 라벨을 찾아 쓰므로 항목 자체를 지우면 배지가 빈칸이 된다.
+export const SUB_DEFS: Record<GroupId, { id: SubId; label: string; browsable?: boolean }[]> = {
   company: [
     { id: "design", label: "조경설계" },
     { id: "engineering", label: "종합엔지니어링" },
     { id: "construction", label: "조경시공" },
     { id: "maintenance", label: "유지관리" },
     { id: "trendy", label: "공간연출/플랜테리어" },
-    { id: "general", label: "조경종합" },
+    // [칩에서 뺀 이유] "조경종합"은 대장에서 온 분류가 아니라 classifyBiz 의 마지막 폴백이다 —
+    // 이름에 "조경"은 있는데 설계·시공·관리·플랜테리어 어디에도 안 걸리는 카카오/네이버 검색
+    // 결과를 담으려고 만든 자리다. 그래서 D1(garden_biz_v2)에는 general 행이 단 한 건도 없고
+    // (2026-09-08 확인: construction 2857 / maintenance 510 / trendy 287 / design 102), 기본
+    // 탐색 모드에서 이 칩을 누르면 지도가 항상 비어버렸다. 검색 모드에서만 값이 생기는 칩을
+    // 다른 소분류와 나란히 두는 건 거짓말이라 칩에서 뺀다. 분류값 자체는 살아 있어서 general 로
+    // 잡힌 검색 결과는 "조경회사" 안에 그대로 나오고, 목록·상세 배지도 "조경종합"으로 찍힌다.
+    // 나중에 대장에 general 행이 실제로 들어오면 browsable 을 지워 칩을 되살리면 된다.
+    { id: "general", label: "조경종합", browsable: false },
   ],
   material: [
     { id: "nursery", label: "조경수/농원" },
