@@ -333,18 +333,20 @@ function registryParks(): Place[] {
 // 이름 표기가 조금씩 다르다("정남진수목원" vs "정남진 수목원", "화담숲" vs "곤지암수목원(화담숲)").
 // 괄호·공백·가운뎃점을 털어낸 뒤 비교하고, 그래도 안 걸리면 300m 안에서 한쪽 이름이 다른 쪽에
 // 포함되는지를 본다. 순수 거리만으로 지우면 한 공원 안의 별개 시설까지 함께 사라진다.
-function normalizeParkName(name: string): string {
+function normalizePlaceName(name: string): string {
   return (name || "").replace(/\(.*?\)|\[.*?\]/g, "").replace(/[\s·・,'"\-—–_/]/g, "");
 }
-function isSamePark(a: Place, b: Place): boolean {
-  const na = normalizeParkName(a.placeName);
-  const nb = normalizeParkName(b.placeName);
-  if (!na || !nb) return false;
-  if (na === nb) return true;
+function metersApart(a: Place, b: Place): number {
   const dLat = (a.coordinates[1] - b.coordinates[1]) * 111_000;
   const dLng = (a.coordinates[0] - b.coordinates[0]) * 88_000;
-  const near = Math.hypot(dLat, dLng) < 300;
-  return near && (na.includes(nb) || nb.includes(na));
+  return Math.hypot(dLat, dLng);
+}
+function isSamePark(a: Place, b: Place): boolean {
+  const na = normalizePlaceName(a.placeName);
+  const nb = normalizePlaceName(b.placeName);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  return metersApart(a, b) < 300 && (na.includes(nb) || nb.includes(na));
 }
 
 let parkCache: Place[] | null = null;
@@ -394,14 +396,30 @@ function dedupKey(p: Place): string {
   const addrShort = (p.address || "").split(" ").slice(0, 3).join("");
   return `${name}|${addrShort}`;
 }
+/*
+ * [먼저 넘긴 목록이 이긴다]
+ * 같은 업체가 여러 소스에 있으면 인자로 먼저 넘긴 목록의 것을 남긴다. 그래서 호출부에서
+ * 대장(D1) -> 카카오 -> 네이버 순으로 넘긴다. 대장은 사업자 신고 정보라 상호·주소가 정확하고,
+ * 카카오/네이버에는 지점명이나 옛 상호가 섞여 있다. 예전에는 카카오를 먼저 넘겨서 대장 정보가
+ * 있는데도 카카오 쪽이 남았다.
+ *
+ * dedupKey 는 "이름 + 주소 앞 3토큰"이라 같은 곳인데도 소스마다 도로명/지번 표기가 달라
+ * 어긋나는 일이 잦았다. 그래서 이름을 정규화해 한 번 더 본다 - 이름이 같고 300m 안이면 같은
+ * 곳으로 친다. 좌표만으로 판단하면 한 건물에 입주한 다른 업체까지 지워버린다.
+ */
 function mergeDedup(...lists: Place[][]): Place[] {
   const seen = new Set<string>();
+  const keptByName = new Map<string, Place[]>();
   const out: Place[] = [];
   for (const list of lists) {
     for (const p of list) {
       const k = dedupKey(p);
       if (seen.has(k)) continue;
+      const name = normalizePlaceName(p.placeName);
+      const kept = keptByName.get(name);
+      if (name && kept?.some((q) => metersApart(p, q) < 300)) continue;
       seen.add(k);
+      if (name) (kept ?? keptByName.set(name, []).get(name)!).push(p);
       out.push(p);
     }
   }
@@ -508,10 +526,10 @@ export async function searchBizPlaces(region: Region, keyword: string): Promise<
   const kakaoMaterial = kakao.filter((p) => p.categoryDepth1 === "material");
 
   // [최종 안전망] 소스를 막론하고 병원/주유소/아파트 등 명백히 무관한 업종은 한 번 더 걸러낸다.
-  const company = sortByRelevance(mergeDedup(kakaoCompany, v2CompanyFiltered, naverCompany), keyword).filter(
+  const company = sortByRelevance(mergeDedup(v2CompanyFiltered, kakaoCompany, naverCompany), keyword).filter(
     (p) => !isExcludedName(p.placeName)
   );
-  const material = sortByRelevance(mergeDedup(kakaoMaterial, v2MaterialFiltered, naverMaterial), keyword).filter(
+  const material = sortByRelevance(mergeDedup(v2MaterialFiltered, kakaoMaterial, naverMaterial), keyword).filter(
     (p) => !isExcludedName(p.placeName)
   );
 
