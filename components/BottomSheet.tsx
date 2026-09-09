@@ -1,7 +1,7 @@
 "use client";
 
 import { animate, motion, useDragControls, useMotionValue, useTransform, type PanInfo } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import type { SheetSnap } from "@/lib/types";
 
 // [바텀 시트 물리 엔진]
@@ -21,6 +21,7 @@ import type { SheetSnap } from "@/lib/types";
 // y 를 MotionValue 로 두면 드래그 중에도 매 프레임 값이 따라오므로 둘 다 자연스럽게 풀린다.
 
 const SNAP_VH: Record<SheetSnap, number> = { peek: 0.3, half: 0.5, full: 0.9 };
+const SNAP_ORDER: SheetSnap[] = ["peek", "half", "full"];
 
 // minTopPx: 시트가 이보다 위로는 올라가지 않는다. 상단 검색바·필터 칩을 덮지 않게 하려고
 // 화면 쪽에서 그 스택의 아래 끝을 재서 넘겨준다. 못 재면 0 이라 예전과 같이 동작한다.
@@ -72,25 +73,58 @@ export default function BottomSheet({
    */
   const visibleH = useTransform(y, (v) => Math.max(vh - v, 0));
 
+  // 탭(드래그 없이 눌렀다 뗌)일 때 한 단계 펼치는 동작. 손잡이 클릭과 키보드 Enter/Space가
+  // 동일한 규칙을 쓰도록 함수로 뽑아둔다. full 에서는 더 펼칠 곳이 없으니 half 로 접는다.
+  function advanceOneStep(from: SheetSnap): SheetSnap {
+    if (from === "full") return "half";
+    const idx = SNAP_ORDER.indexOf(from);
+    return SNAP_ORDER[Math.min(idx + 1, SNAP_ORDER.length - 1)];
+  }
+
   function handleDragEnd(_: unknown, info: PanInfo) {
+    // [탭과 드래그 구분 — 2026-09-09]
+    // 손잡이는 누르기만 해도 dragControls.start 가 호출돼 onDragEnd 까지 이어진다. 이동 거리가
+    // 사실상 0이면 "펼치려고 눌렀다"는 의도로 보고 탭 동작(한 단계 펼치기)으로 처리한다.
+    if (Math.abs(info.offset.y) < 5) {
+      return onSnapChange(advanceOneStep(snap));
+    }
+
+    // [스냅 되돌아가기 버그 수정 — 2026-09-09]
+    // 예전에는 속도 조건을 만족하면 드래그를 "시작한" 스냅(snap prop)을 기준으로 한 칸만 옮겼다.
+    // 그래서 peek 에서 full 근처까지 빠르게 길게 끌어도 반응은 "peek 옆 칸인 half"로만 왔다 —
+    // 눈으로는 거의 다 열어놨는데 눈앞에서 도로 반 정도만 열리는 것처럼 보였다. 이제는 손을 뗀
+    // 실제 위치(currentY)에서 제일 가까운 스냅을 먼저 찾고, 속도는 그 자리에서 ±1칸만 보정한다.
     const currentY = y.get();
-    const velocity = info.velocity.y;
-
-    const order: SheetSnap[] = ["peek", "half", "full"];
-    const idx = order.indexOf(snap);
-    if (velocity > 500 && idx > 0) return onSnapChange(order[idx - 1]);
-    if (velocity < -500 && idx < order.length - 1) return onSnapChange(order[idx + 1]);
-
-    let closest: SheetSnap = snap;
+    let closestIdx = 0;
     let minDist = Infinity;
-    for (const s of order) {
+    SNAP_ORDER.forEach((s, i) => {
       const dist = Math.abs(pxFor(s, vh, minTopPx) - currentY);
       if (dist < minDist) {
         minDist = dist;
-        closest = s;
+        closestIdx = i;
       }
+    });
+
+    const velocity = info.velocity.y;
+    if (velocity > 500) closestIdx = Math.max(closestIdx - 1, 0);
+    else if (velocity < -500) closestIdx = Math.min(closestIdx + 1, SNAP_ORDER.length - 1);
+
+    onSnapChange(SNAP_ORDER[closestIdx]);
+  }
+
+  // [손잡이 키보드 접근성 — 2026-09-09] 화살표로 한 단계씩, Enter/Space 로는 탭과 같은 동작.
+  function handleHandleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const idx = SNAP_ORDER.indexOf(snap);
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      onSnapChange(SNAP_ORDER[Math.min(idx + 1, SNAP_ORDER.length - 1)]);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      onSnapChange(SNAP_ORDER[Math.max(idx - 1, 0)]);
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onSnapChange(advanceOneStep(snap));
     }
-    onSnapChange(closest);
   }
 
   /*
@@ -133,11 +167,15 @@ export default function BottomSheet({
         }}
       >
         {/* [손잡이] 보이는 막대는 5px 그대로 두되, 손가락이 닿는 영역은 44px 로 넓힌다.
-            예전에는 19px 이라 시트를 올리고 내리는 유일한 조작이 계속 빗나갔다. */}
+            예전에는 19px 이라 시트를 올리고 내리는 유일한 조작이 계속 빗나갔다.
+            role/tabIndex/onKeyDown 은 마우스·터치 없이 키보드만으로도 스냅을 바꿀 수 있게 한다. */}
         <div
+          role="button"
+          tabIndex={0}
           className="flex flex-shrink-0 cursor-grab items-center justify-center active:cursor-grabbing"
           style={{ touchAction: "none", minHeight: 44 }}
           onPointerDown={(e) => dragControls.start(e)}
+          onKeyDown={handleHandleKeyDown}
           aria-label={dragHandleLabel}
         >
           <div className="h-[5px] w-9 rounded-full bg-[#DADDEF]" />
