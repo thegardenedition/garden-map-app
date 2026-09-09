@@ -9,12 +9,39 @@ import { fetchNaverHomepage, fetchTourIntro, kakaoDirLink } from "@/lib/api";
 import { kakaoPlaceLink } from "@/lib/shareLink";
 import ShareButton from "./ShareButton";
 
-function InfoRow({ icon, label, value, muted }: { icon: string; label: string; value: string | null; muted?: boolean }) {
+// [href를 주면 값 자체가 하이퍼링크가 된다 — 2026-09-10]
+// 홈페이지 URL을 여기 텍스트로만 보여줬더니 링크처럼 보이는데 눌러도 아무 반응이 없었다
+// (실제 이동은 아래 별도 "홈페이지" 버튼에서만 됐다). value를 <a>로 바꿔 그 자리에서 바로
+// 눌러 이동할 수 있게 한다. href가 없으면(정보 자체가 없을 때) 예전처럼 일반 텍스트로 둔다.
+function InfoRow({
+  icon,
+  label,
+  value,
+  muted,
+  href,
+}: {
+  icon: string;
+  label: string;
+  value: string | null;
+  muted?: boolean;
+  href?: string | null;
+}) {
   return (
     <div className="flex min-w-0 items-start gap-2.5 border-b border-[#F5F6FF] py-[7px] text-[12.5px] last:border-b-0">
       <span className="w-4 flex-shrink-0 text-center opacity-70">{icon}</span>
       <span className="w-16 flex-shrink-0 font-bold text-[#9AA0C4]">{label}</span>
-      <span className={`min-w-0 flex-1 break-words ${muted ? "text-[#C2C6DE]" : "text-[#3A3A55]"}`}>{value || "정보없음"}</span>
+      {href ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="min-w-0 flex-1 break-words text-[var(--color-deep-blue)] underline underline-offset-2"
+        >
+          {value}
+        </a>
+      ) : (
+        <span className={`min-w-0 flex-1 break-words ${muted ? "text-[#C2C6DE]" : "text-[#3A3A55]"}`}>{value || "정보없음"}</span>
+      )}
     </div>
   );
 }
@@ -84,6 +111,7 @@ export default function DetailContent({ place, region }: { place: Place; region:
             label="홈페이지"
             value={place.homepageDirect ? truncateUrl(place.homepageDirect, 30) : null}
             muted={!place.homepageDirect}
+            href={place.homepageDirect}
           />
           <InfoRow icon="📍" label="출처" value="한국수목원정원관리원" />
         </div>
@@ -111,6 +139,7 @@ export default function DetailContent({ place, region }: { place: Place; region:
                     : null
             }
             muted={!place.homepageDirect && !naverHomepage.data}
+            href={place.homepageDirect || naverHomepage.data}
           />
           <InfoRow icon="📍" label="출처" value={place.homepage ? "카카오맵" : "네이버"} />
         </div>
