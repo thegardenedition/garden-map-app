@@ -51,9 +51,24 @@ export default function Sidebar({
   return (
     <div className="relative z-[20] flex h-full w-[400px] flex-shrink-0 flex-col bg-[var(--color-deep-blue)] text-white">
       <div className="flex-shrink-0 px-6 pb-3.5 pt-6">
-        <span className="tp-caption inline-flex items-center gap-1.5 rounded-2xl border-[1.5px] border-[var(--color-neon-yellow)] px-3.5 py-1 text-[var(--color-neon-yellow)]">
-          ✳ GARDEN MAP
-        </span>
+        {/* 이 앱을 vercel.app 주소로 직접 열거나 북마크해 들어온 사람은 매거진그린으로
+            돌아갈 길이 없었다(GARDEN MAP 배지가 링크가 아니었다). 배지 왼쪽에 브랜드
+            링크를 나란히 붙인다 — 기존 배지의 크기·타이포는 그대로 두고 톤만 낮춘다.
+            target="_top": 이 앱은 magazinegreen.co.kr/garden-map 에서 iframe 으로도
+            열린다. target 없이 두면 iframe 안에서 다시 홈페이지를 여는 꼴이 되어 액자
+            속 액자처럼 보인다. _top 은 iframe 이 아닐 때는 그냥 현재 창 이동과 같다. */}
+        <div className="flex items-center gap-2">
+          <a
+            href="https://magazinegreen.co.kr"
+            target="_top"
+            className="tp-caption inline-flex items-center gap-1.5 rounded-2xl bg-white/10 px-3.5 py-1 text-white/80 transition hover:bg-white/20"
+          >
+            MAGAZINE GREEN
+          </a>
+          <span className="tp-caption inline-flex items-center gap-1.5 rounded-2xl border-[1.5px] border-[var(--color-neon-yellow)] px-3.5 py-1 text-[var(--color-neon-yellow)]">
+            ✳ GARDEN MAP
+          </span>
+        </div>
         <h1 className="tp-title mt-2.5">정원·조경 지도</h1>
         <p className="tp-body mt-1 text-[var(--color-muted)]">
           지역과 검색어를 입력하면 조경회사·조경수/자재·공원/수목원 결과가 한번에 표시됩니다.
