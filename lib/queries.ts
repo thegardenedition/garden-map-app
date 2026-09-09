@@ -9,7 +9,8 @@ import {
   browseByBbox,
   browseByCategory,
   searchBizPlaces,
-  searchNearby,
+  searchNearbyAdaptive,
+  type NearbyResult,
   searchParks,
   fetchProjectPins,
 } from "./api";
@@ -129,17 +130,16 @@ export function useBrowseSearch(
 // [내 주변 + 카테고리] 그룹을 쿼리 키와 인자에 함께 넘긴다. 예전에는 반경 결과를 받아온 뒤
 // 클라이언트에서 걸렀는데, 반경 안에 조경회사가 200건이고 자재가 3건이면 자재 칩을 눌렀을 때
 // 3건만 남는 식이라 "이 근처 자재상 전체"를 볼 수 없었다. 이제 카테고리별로 각각 반경을 조회한다.
-// "내 주변에서 찾기"가 훑는 반경. 지도를 이 범위에 맞춰 보여줘야 하므로 화면 쪽에서도 쓴다.
-// 예전에는 이 값이 queryFn 안에만 있어서, 지도는 이 숫자를 모른 채 제멋대로 확대했다.
-export const NEARBY_RADIUS_M = 5000;
-
+// 반경은 이제 고정이 아니라 결과에 맞춰 정해진다(lib/api.ts 의 searchNearbyAdaptive).
+// 그래서 이 훅은 장소 목록만이 아니라 실제로 쓴 반경까지 함께 돌려준다 - 지도 범위와
+// 화면 문구가 그 값을 따라가야 하기 때문이다.
 export function useNearbySearch(
   coords: { lat: number; lng: number } | null,
   group: GroupId | null
-): UseQueryResult<Place[]> {
+): UseQueryResult<NearbyResult> {
   return useQuery({
     queryKey: ["nearby", coords?.lat, coords?.lng, group],
-    queryFn: () => searchNearby(coords!.lat, coords!.lng, NEARBY_RADIUS_M, group),
+    queryFn: () => searchNearbyAdaptive(coords!.lat, coords!.lng, group),
     enabled: Boolean(coords),
     retry: (count, err) => isRetriableError(err) && count < 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),

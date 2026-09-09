@@ -607,6 +607,47 @@ async function fetchNearbyParks(lat: number, lng: number, radiusM: number): Prom
 // 없고 전부 서울이었다. 그래서 서울 밖에서 이 버튼을 누르면 조경회사·조경수/자재가 구조적으로
 // 0건이었다 — 정작 같은 항목이 D1(garden_biz_v2)에는 전국 6,829건 들어 있는데도.
 // 이제 워커의 /bizdb-v2?near= 로 같은 대장을 보고, 공원/수목원은 기존대로 세션 캐시에서 합친다.
+/*
+ * [반경을 결과에 맞춰 넓힌다]
+ *
+ * 예전에는 반경이 5km 로 고정이었다. 같은 숫자가 서울에서는 너무 넓고 시골에서는 너무 좁다.
+ * 서울 도심에서 누르면 수백 건이 쏟아져 무엇을 봐야 할지 알 수 없고, 군 단위에서 누르면
+ * 두어 곳만 나와 기능이 고장난 것처럼 보인다. 실제로는 그 반경 안에 정말 없는 것뿐이다.
+ *
+ * 좁은 반경부터 시작해 결과가 충분해질 때까지만 넓힌다. 조밀한 곳은 첫 번째 반경에서 끝나므로
+ * 요청이 한 번이고 결과도 진짜 '주변'이다. 한적한 곳에서만 넓어진다 - 그런 곳은 훑을 행 자체가
+ * 적어서 넓혀도 싸다.
+ *
+ * 20km 에서 멈추는 이유: 그보다 멀면 '내 주변'이라고 부르기 어렵다. 그때는 넓히는 대신 실제로
+ * 쓴 반경을 화면에 밝혀서, 적게 나온 것이 고장이 아니라 사실임을 알린다. 그래서 이 함수는
+ * 장소만이 아니라 '어느 반경에서 찾았는지'를 함께 돌려준다.
+ *
+ * 넓은 반경을 처음부터 쓰지 않는 또 하나의 이유: 워커의 반경 조회는 bbox 로 1차 필터한 뒤
+ * LIMIT 3000 으로 자르고 그다음에 거리로 정렬한다. 서울에서 20km bbox 를 뜨면 그 3000 에
+ * 걸려 '가까운 곳'이 잘려 나갈 수 있다. 조밀한 곳에서 좁게 시작하면 그 경계에 닿지 않는다.
+ */
+export interface NearbyResult {
+  places: Place[];
+  radiusM: number; // 실제로 결과를 얻은 반경. 지도 범위와 화면 문구가 이 값을 따른다.
+}
+
+export const NEARBY_STEPS_M = [2000, 6000, 20000];
+const NEARBY_ENOUGH = 15;
+
+export async function searchNearbyAdaptive(
+  lat: number,
+  lng: number,
+  group: GroupId | null = null
+): Promise<NearbyResult> {
+  let last: Place[] = [];
+  for (const radiusM of NEARBY_STEPS_M) {
+    last = await searchNearby(lat, lng, radiusM, group);
+    if (last.length >= NEARBY_ENOUGH) return { places: last, radiusM };
+  }
+  // 마지막 반경까지 넓혔는데도 적다. 그건 정말 없는 것이므로 있는 그대로 돌려준다.
+  return { places: last, radiusM: NEARBY_STEPS_M[NEARBY_STEPS_M.length - 1] };
+}
+
 export async function searchNearby(
   lat: number,
   lng: number,

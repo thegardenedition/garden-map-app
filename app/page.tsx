@@ -16,7 +16,6 @@ import {
   useNearbySearch,
   useBrowseSearch,
   useProjectPins,
-  NEARBY_RADIUS_M,
   VIEWPORT_MAX_LEVEL,
   type Viewport,
 } from "@/lib/queries";
@@ -106,7 +105,7 @@ export default function Page() {
   const projectPinsQuery = useProjectPins();
 
   const rawPlaces = useMemo(() => {
-    if (isNearbyMode) return nearbyQuery.data ?? [];
+    if (isNearbyMode) return nearbyQuery.data?.places ?? [];
     if (isBrowseMode) return browseQuery.data ?? [];
     return [...(bizQuery.data ?? []), ...(parkQuery.data ?? [])];
   }, [isNearbyMode, isBrowseMode, nearbyQuery.data, browseQuery.data, bizQuery.data, parkQuery.data]);
@@ -247,8 +246,13 @@ export default function Page() {
 
   const activeGroupLabel = activeGroup ? GROUP_LABEL[activeGroup] : null;
   const isViewportScope = isBrowseMode && Boolean(viewport) && (viewport as Viewport).level <= VIEWPORT_MAX_LEVEL;
+  // 반경은 결과에 맞춰 달라지므로(조밀한 곳은 2km, 한적한 곳은 20km) 실제로 쓴 값을 밝힌다.
+  // 적게 나왔을 때 그게 고장이 아니라 "그 반경 안에 정말 없다"는 뜻임을 알 수 있어야 한다.
+  const nearbyRadiusKm = nearbyQuery.data ? Math.round(nearbyQuery.data.radiusM / 1000) : null;
   const statusLabel = isNearbyMode
-    ? "내 위치 · 반경 5km"
+    ? nearbyRadiusKm
+      ? `내 위치 · 반경 ${nearbyRadiusKm}km`
+      : "내 위치 · 찾는 중"
     : isSearchMode
       ? `${region} · "${submittedTerm}"`
       : isViewportScope
@@ -264,7 +268,7 @@ export default function Page() {
       focusTrigger={focusTrigger}
       focusCoords={nearbyCoords ?? locateCoords}
       focusAccuracy={locateAccuracy}
-      focusRadius={isNearbyMode ? NEARBY_RADIUS_M : null}
+      focusRadius={isNearbyMode ? (nearbyQuery.data?.radiusM ?? null) : null}
       isDesktop={isDesktop}
       projectPins={projectPinsQuery.data ?? []}
       onUserPan={handleUserPan}
