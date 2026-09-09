@@ -436,19 +436,38 @@ function dedupKey(p: Place): string {
  * dedupKey 는 "이름 + 주소 앞 3토큰"이라 같은 곳인데도 소스마다 도로명/지번 표기가 달라
  * 어긋나는 일이 잦았다. 그래서 이름을 정규화해 한 번 더 본다 - 이름이 같고 300m 안이면 같은
  * 곳으로 친다. 좌표만으로 판단하면 한 건물에 입주한 다른 업체까지 지워버린다.
+ *
+ * [버려지던 중복의 정보를 빈 칸 채우기에 쓴다 — 2026-09-10]
+ * 예전엔 중복으로 판정되면 나중 항목을 통째로 버렸다. 그런데 대장/카카오 쪽에 전화번호나
+ * 주소가 비어 있고 네이버 쪽엔 있는 경우가 흔해서, 먼저 남은 항목이 그 정보를 영영 놓쳤다.
+ * 우선순위(어떤 이름·좌표·분류가 남는가)는 그대로 두되, 비어 있는 연락처성 필드(전화번호·
+ * 주소·홈페이지)만 나중 소스에서 채운다 — 이미 값이 있으면 절대 덮어쓰지 않는다.
  */
+function backfillContactFields(kept: Place, dupe: Place) {
+  if (!kept.contact && dupe.contact) kept.contact = dupe.contact;
+  if (!kept.address && dupe.address) kept.address = dupe.address;
+  if (!kept.homepageDirect && dupe.homepageDirect) kept.homepageDirect = dupe.homepageDirect;
+}
 function mergeDedup(...lists: Place[][]): Place[] {
-  const seen = new Set<string>();
+  const byKey = new Map<string, Place>();
   const keptByName = new Map<string, Place[]>();
   const out: Place[] = [];
   for (const list of lists) {
     for (const p of list) {
       const k = dedupKey(p);
-      if (seen.has(k)) continue;
+      const exact = byKey.get(k);
+      if (exact) {
+        backfillContactFields(exact, p);
+        continue;
+      }
       const name = normalizePlaceName(p.placeName);
       const kept = keptByName.get(name);
-      if (name && kept?.some((q) => metersApart(p, q) < 300)) continue;
-      seen.add(k);
+      const near = kept?.find((q) => metersApart(p, q) < 300);
+      if (name && near) {
+        backfillContactFields(near, p);
+        continue;
+      }
+      byKey.set(k, p);
       if (name) (kept ?? keptByName.set(name, []).get(name)!).push(p);
       out.push(p);
     }
