@@ -93,11 +93,19 @@ export default function BottomSheet({
     onSnapChange(closest);
   }
 
+  /*
+   * [전체 확장에서는 모서리를 지운다 — 2026-09-09]
+   * full(90%)까지 올라온 시트는 사실상 화면 전체나 다름없는데 위쪽 모서리만 둥글게 남아 있으면
+   * "바텀 시트"라는 인상이 계속 남아 어중간해 보인다. 그 상태에서만 각지게 바꿔서 하나의
+   * 독립된 화면(페이지)처럼 보이게 한다. peek/half 로 돌아가면 다시 둥글어진다.
+   */
+  const sheetRadius = snap === "full" ? "rounded-t-none" : "rounded-t-[20px]";
+
   return (
     <motion.div
       // overflow-hidden 을 여기에 두지 않는다. floatingActions 는 시트 위쪽(bottom:100%)에
       // 놓이므로 여기서 자르면 통째로 사라진다. 둥근 모서리 클리핑은 아래 내용 상자가 맡는다.
-      className="gpu absolute inset-x-0 bottom-0 z-[40] flex flex-col rounded-t-[20px] bg-white shadow-[0_-8px_28px_rgba(0,0,0,0.28)]"
+      className={`gpu absolute inset-x-0 bottom-0 z-[40] flex flex-col ${sheetRadius} bg-white shadow-[0_-8px_28px_rgba(0,0,0,0.28)] transition-[border-radius] duration-300`}
       style={{ height: "100dvh", y }}
       drag="y"
       dragListener={false}
@@ -115,7 +123,7 @@ export default function BottomSheet({
       )}
 
       <motion.div
-        className="flex flex-col overflow-hidden rounded-t-[20px]"
+        className={`flex flex-col overflow-hidden ${sheetRadius} transition-[border-radius] duration-300`}
         style={{
           height: visibleH,
           // 홈 인디케이터가 있는 기기에서 목록 마지막 줄이 그 아래로 들어가지 않게 한다.
