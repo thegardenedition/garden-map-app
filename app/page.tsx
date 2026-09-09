@@ -27,11 +27,11 @@ import { GROUP_LABEL } from "@/lib/types";
 /*
  * [위치 옵션 — 기본값을 쓰면 안 되는 이유]
  * getCurrentPosition 을 옵션 없이 부르면 브라우저 기본값이 적용된다.
- *  - enableHighAccuracy: false → Wi-Fi·IP 기반 추정만 쓰고 GPS 를 켜지 않는다. 실내나
- *    데스크톱에서는 수백 m ~ 수 km 오차가 난다. 이 앱은 "반경 5km"를 다루므로 그 오차가
- *    결과를 통째로 바꾼다. 정확도가 떨어진다는 체감의 직접 원인이었다.
- *  - timeout: 무한대 → 위치를 못 잡으면 로딩 표시가 영원히 돈다. 사용자는 앱이 멈춘 줄 안다.
- *  - maximumAge: 0 → 버튼을 누를 때마다 매번 처음부터 다시 잡는다.
+ * - enableHighAccuracy: false → Wi-Fi·IP 기반 추정만 쓰고 GPS 를 켜지 않는다. 실내나
+ *   데스크톱에서는 수백 m ~ 수 km 오차가 난다. 이 앱은 "반경 5km"를 다루므로 그 오차가
+ *   결과를 통째로 바꾼다. 정확도가 떨어진다는 체감의 직접 원인이었다.
+ * - timeout: 무한대 → 위치를 못 잡으면 로딩 표시가 영원히 돈다. 사용자는 앱이 멈춘 줄 안다.
+ * - maximumAge: 0 → 버튼을 누를 때마다 매번 처음부터 다시 잡는다.
  */
 const GEO_OPTS: PositionOptions = {
   enableHighAccuracy: true,
@@ -81,9 +81,9 @@ export default function Page() {
   const [viewport, setViewport] = useState<Viewport | null>(null);
 
   // [세 가지 모드는 배타적이다]
-  //  - 검색:   검색어가 있을 때. 카카오/네이버/자체DB를 합쳐 조회한다.
-  //  - 내 주변: 위치를 잡았을 때. 반경 5km를 거리순으로.
-  //  - 탐색:   위 둘 다 아닐 때의 기본값. 지도가 보여주는 것을 그대로 조회한다.
+  // - 검색: 검색어가 있을 때. 카카오/네이버/자체DB를 합쳐 조회한다.
+  // - 내 주변: 위치를 잡았을 때. 반경 5km를 거리순으로.
+  // - 탐색: 위 둘 다 아닐 때의 기본값. 지도가 보여주는 것을 그대로 조회한다.
   // 셋이 동시에 켜지면 같은 화면에 두 소스가 겹쳐 중복 마커가 생기므로 반드시 하나만 쓴다.
   const isNearbyMode = Boolean(nearbyCoords) && !submittedTerm;
   const isSearchMode = submittedTerm.length > 0;
@@ -116,8 +116,8 @@ export default function Page() {
   const isLoading = isNearbyMode
     ? nearbyQuery.isLoading
     : isBrowseMode
-      ? browseQuery.isLoading
-      : bizQuery.isLoading;
+    ? browseQuery.isLoading
+    : bizQuery.isLoading;
 
   const places: Place[] = useMemo(() => {
     const list = rawPlaces ?? [];
@@ -276,10 +276,10 @@ export default function Page() {
       ? `내 주변 · 반경 ${nearbyRadiusKm}km`
       : "내 주변 · 찾는 중"
     : isSearchMode
-      ? `검색 · ${region} · "${submittedTerm}"`
-      : isViewportScope
-        ? "지도 탐색 · 지금 보이는 영역"
-        : `지도 탐색 · ${region} 분포 (확대하면 전부 표시)`;
+    ? `검색 · ${region} · "${submittedTerm}"`
+    : isViewportScope
+    ? "지도 탐색 · 지금 보이는 영역"
+    : `지도 탐색 · ${region} 분포 (확대하면 전부 표시)`;
 
   const mapCanvas = (
     <MapCanvas
@@ -347,6 +347,20 @@ export default function Page() {
       {mapCanvas}
 
       <div className="absolute inset-x-3 top-3 z-[20] flex flex-col gap-2">
+        {/* 데스크탑 사이드바에는 브랜드 배지가 있지만 모바일 상단바에는 아예 없었다 —
+            지도를 iframe 밖에서 직접 열거나 북마크한 사람은 매거진그린으로 돌아갈 길이
+            없었다. 검색창 위에 작은 링크 하나만 얹는다(기존 플로팅 레이아웃 그대로,
+            검색 기능을 가리지 않는다).
+            target="_top": 이 앱은 magazinegreen.co.kr/garden-map 에서 iframe 으로도
+            열린다. target 없이 두면 iframe 안에서 다시 홈페이지를 여는 꼴이 되어 액자
+            속 액자처럼 보인다. _top 은 iframe 이 아닐 때는 그냥 현재 창 이동과 같다. */}
+        <a
+          href="https://magazinegreen.co.kr"
+          target="_top"
+          className="tp-caption inline-flex w-fit items-center gap-1.5 self-start rounded-2xl bg-[var(--color-deep-blue)]/90 px-3 py-1 text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+        >
+          ✳ MAGAZINE GREEN
+        </a>
         <TopBar onSubmit={runSearch} />
         <FilterChips onReset={handleReset} canReset={canReset} />
         {showResearchHere && (
