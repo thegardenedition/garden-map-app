@@ -115,10 +115,17 @@ export const PIN_COMPACT: PinSize = { width: 24, height: 30, anchorX: 12, anchor
 /**
  * 지도 마커용 SVG 문자열. 색을 바꾸는 대신 크기와 흰 테두리로 선택 상태를 알린다 —
  * 선택했다고 색을 바꾸면 그 핀이 어느 그룹인지 알 수 없게 된다.
+ *
+ * [흰 테두리는 선택 여부와 무관하게 항상 있어야 한다 — 2026-09-10]
+ * 기본 상태 테두리가 rgba(0,0,0,.16)로 사실상 안 보이는 수준이었다. 그룹색 세 가지(테라코타·
+ * 딥그린·블루)가 실제 카카오맵 타일의 도로·숲·수면 색과 채도·명도대가 겹쳐서, 지도 위에 놓이면
+ * 핀이 배경에 섞여 들어갔다. 브랜드 팔레트(채도를 일부러 낮춘 톤)는 그대로 두고, 모든 핀에
+ * 얇은 흰 테두리를 둘러 배경이 무슨 색이든 실루엣이 분리되게 한다. 선택 시에는 이 테두리를
+ * 두껍게만 키운다 — 그래야 "선택 여부는 두께 차이"라는 원래 설계 의도와 일치한다.
  */
 export function pinSvg(opts: { fill: string; ink?: string; iconPath: string; selected?: boolean }): string {
   const ink = opts.ink ?? "#ffffff";
-  const rim = opts.selected ? 'stroke="#ffffff" stroke-width="2.6"' : 'stroke="rgba(0,0,0,.16)" stroke-width=".9"';
+  const rim = opts.selected ? 'stroke="#ffffff" stroke-width="2.6"' : 'stroke="#ffffff" stroke-width="1.6"';
   return (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 48">' +
     `<ellipse cx="20" cy="43.4" rx="${opts.selected ? 6 : 5.2}" ry="1.9" fill="rgba(20,24,40,${opts.selected ? ".22" : ".16"})"/>` +
