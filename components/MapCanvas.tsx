@@ -345,7 +345,15 @@ export default function MapCanvas({
           averageCenter: true,
           // 레벨 8부터 묶는다. 6~7 은 작은 핀으로 개별 장소를 보여주는 구간이다(pinSizeForLevel).
           minLevel: 8,
-          disableClickZoom: false,
+          /*
+           * [클러스터 클릭 확대를 직접 만든다 — 2026-09-10]
+           * disableClickZoom 기본값(false)은 카카오가 클러스터 범위에 맞춰 줌 레벨을 한 번에
+           * 점프시킨다 — 애니메이션이 없다. 그 직후 idle → 새 화면 영역 재조회 → 응답이 와야
+           * 개별 핀이 뜨는 지연까지 겹쳐서 "클릭 → 순간 이동 → 잠깐 멈춤 → 핀 팝인"으로 두 번
+           * 끊겨 보였다. disableClickZoom:true로 기본 동작을 끄고, 아래 clusterclick에서
+           * 직접 한 단계씩 부드럽게 확대한다 — 최소한 확대 자체는 하나의 이어지는 동작이 된다.
+           */
+          disableClickZoom: true,
           // [크기로 양을 읽히게 한다] 예전엔 스타일이 하나뿐이라 5곳짜리 묶음과 800곳짜리 묶음이
           // 똑같은 원으로 보였다. 지도에서 원의 크기는 곧 "얼마나 많은가"를 뜻하는 가장 기본적인
           // 시각 언어인데, 그걸 버리면 사용자는 숫자를 하나하나 읽어야 한다.
@@ -371,6 +379,13 @@ export default function MapCanvas({
               boxSizing: "border-box", boxShadow: "0 4px 14px rgba(0,0,0,.34)",
             },
           ],
+        });
+        // [한 단계씩만 확대] 클러스터 범위 전체를 한 번에 맞추려면 몇 레벨을 뛸지 그때그때
+        // 다르고, 카카오 애니메이션은 레벨 차가 2 넘으면 아예 무효화된다(공식 문서). 그래서
+        // 큰 클러스터든 작은 클러스터든 항상 1레벨씩만, 클러스터 중심을 기준으로 부드럽게
+        // 확대한다 — 큰 뭉치는 두세 번 눌러야 다 풀리지만, 매번 확실히 애니메이션이 붙는다.
+        kakao.maps.event.addListener(clustererRef.current, "clusterclick", (cluster: any) => {
+          map.setLevel(map.getLevel() - 1, { anchor: cluster.getCenter(), animate: true });
         });
       });
     }
