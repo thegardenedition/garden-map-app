@@ -6,6 +6,7 @@ import Script from "next/script";
 import type { Place, ProjectPin } from "@/lib/types";
 import { SUB_DEFS, formatDistance } from "@/lib/types";
 import {
+  PIN_COMPACT,
   PIN_DEFAULT,
   PIN_SELECTED,
   placePinSvg,
@@ -58,14 +59,27 @@ function toMarkerImage(kakao: any, key: string, svg: string, size: PinSize) {
   return image;
 }
 
-function placeMarkerImage(kakao: any, place: Place, selected = false) {
-  const key = `${place.categoryDepth1}|${place.categoryDepth2}|${selected ? "on" : "off"}`;
-  return toMarkerImage(
-    kakao,
-    key,
-    placePinSvg(place.categoryDepth1, place.categoryDepth2, selected),
-    selected ? PIN_SELECTED : PIN_DEFAULT
-  );
+/*
+ * [줌 단계별 핀 크기]
+ * 가까이 보면 핀 하나하나가 관심사지만, 넓게 볼수록 궁금한 것은 "어디에 몰려 있는가"로
+ * 바뀐다. 그런데 크기가 하나뿐이면 넓게 볼 때 핀이 서로 겹쳐 덩어리로 뭉개지고, 정작
+ * 밀집도는 더 안 보인다. 카카오 지도는 레벨 숫자가 클수록 넓게 보이므로,
+ *
+ *   레벨 5 이하  기본 핀(32×38) — 개별 장소를 고르는 구간
+ *   레벨 6~8     작은 핀(24×30) — 여러 곳을 한눈에 훑는 구간
+ *   레벨 9 이상  클러스터만     — 개별 핀은 의미가 없고 묶음 크기가 정보가 되는 구간
+ *
+ * 예전에는 크기가 하나였고 클러스터가 레벨 7부터 나와서, 가운데 구간이 아예 없었다.
+ */
+function pinSizeForLevel(level: number): PinSize {
+  return level >= 6 ? PIN_COMPACT : PIN_DEFAULT;
+}
+
+function placeMarkerImage(kakao: any, place: Place, selected = false, size?: PinSize) {
+  const use = selected ? PIN_SELECTED : (size ?? PIN_DEFAULT);
+  // 크기를 키에 넣지 않으면 축소용 이미지가 기본 크기로 캐시돼 섞인다.
+  const key = `${place.categoryDepth1}|${place.categoryDepth2}|${selected ? "on" : "off"}|${use.width}`;
+  return toMarkerImage(kakao, key, placePinSvg(place.categoryDepth1, place.categoryDepth2, selected), use);
 }
 
 export interface MapCanvasHandle {
@@ -145,6 +159,10 @@ export default function MapCanvas({
   const mapRef = useRef<any>(null);
   const clustererRef = useRef<any>(null);
   const markersRef = useRef<Record<string, any>>({});
+  // 줌이 바뀌면 이미 올려둔 마커의 이미지를 다시 만들어야 한다. 그러려면 마커마다 어떤 장소인지
+  // 알아야 하므로 나란히 들고 있는다(markersRef 의 값 모양을 바꾸면 쓰는 곳이 다섯 군데라 위험).
+  const markerPlacesRef = useRef<Record<string, Place>>({});
+  const pinWidthRef = useRef<number>(PIN_DEFAULT.width);
   const projectMarkersRef = useRef<any[]>([]);
   const isolatedMarkerRef = useRef<any>(null);
   const userMarkerRef = useRef<any>(null);
@@ -241,6 +259,19 @@ export default function MapCanvas({
           onUserPanRef.current?.({ lat: center.getLat(), lng: center.getLng() });
         });
 
+        // [줌 단계가 바뀌면 핀 크기도 바뀐다] 크기 구간이 실제로 넘어갔을 때만 손댄다.
+        // 레벨이 한 칸 움직일 때마다 수백 개 마커의 이미지를 다시 만들면 확대가 버벅인다.
+        kakao.maps.event.addListener(map, "zoom_changed", () => {
+          const size = pinSizeForLevel(map.getLevel());
+          if (size.width === pinWidthRef.current) return;
+          pinWidthRef.current = size.width;
+          for (const [id, marker] of Object.entries(markersRef.current)) {
+            const place = markerPlacesRef.current[id];
+            if (!place) continue;
+            marker.setImage(placeMarkerImage(kakao, place, false, size));
+          }
+        });
+
         // [뷰포트 조회] idle은 드래그·줌·panTo가 모두 끝나 지도가 멈춘 뒤 한 번 발생한다.
         // 이동 중에 계속 쏘지 않으므로 여기서 별도 스로틀을 걸 필요가 없고, 실제 재조회 여부는
         // 상위(useViewportSearch)에서 bbox를 격자에 스냅해 판단한다 — 조금 움직였다고 매번
@@ -285,7 +316,8 @@ export default function MapCanvas({
         clustererRef.current = new kakao.maps.MarkerClusterer({
           map,
           averageCenter: true,
-          minLevel: 7,
+          // 레벨 9부터 묶는다. 7~8 은 작은 핀으로 개별 장소를 보여주는 구간이다(pinSizeForLevel).
+          minLevel: 9,
           disableClickZoom: false,
           // [크기로 양을 읽히게 한다] 예전엔 스타일이 하나뿐이라 5곳짜리 묶음과 800곳짜리 묶음이
           // 똑같은 원으로 보였다. 지도에서 원의 크기는 곧 "얼마나 많은가"를 뜻하는 가장 기본적인
@@ -356,6 +388,10 @@ export default function MapCanvas({
     clusterer.clear();
     Object.values(markersRef.current).forEach((m) => m.setMap(null));
     markersRef.current = {};
+    markerPlacesRef.current = {};
+    // 지금 보고 있는 축척에 맞는 크기로 만든다. 줌이 바뀌면 위 zoom_changed 가 갈아 끼운다.
+    const currentPinSize = pinSizeForLevel(map.getLevel());
+    pinWidthRef.current = currentPinSize.width;
     // 호버 중이던 핀이 이번 렌더에서 사라질 수 있다. 그러면 mouseout 이 오지 않아 툴팁만 남는다.
     if (hoverOverlayRef.current) {
       hoverOverlayRef.current.setMap(null);
@@ -366,7 +402,7 @@ export default function MapCanvas({
     for (const place of places) {
       const [lng, lat] = place.coordinates;
       if (!lat || !lng) continue;
-      const image = placeMarkerImage(kakao, place);
+      const image = placeMarkerImage(kakao, place, false, currentPinSize);
       const marker = new kakao.maps.Marker({ position: new kakao.maps.LatLng(lat, lng), image });
       kakao.maps.event.addListener(marker, "click", () => {
         onSelectPlace(place.placeId);
@@ -391,6 +427,7 @@ export default function MapCanvas({
         });
       }
       markersRef.current[place.placeId] = marker;
+      markerPlacesRef.current[place.placeId] = place;
       newMarkers.push(marker);
     }
     clusterer.addMarkers(newMarkers);

@@ -108,6 +108,9 @@ export interface PinSize {
 // 모바일 터치 타겟은 카카오가 마커 주변으로 여유를 주므로 실사용에 무리가 없다.
 export const PIN_DEFAULT: PinSize = { width: 32, height: 38, anchorX: 16, anchorY: Math.round(38 * PIN_TIP_RATIO) };
 export const PIN_SELECTED: PinSize = { width: 42, height: 50, anchorX: 21, anchorY: Math.round(50 * PIN_TIP_RATIO) };
+// [축소용] 넓게 볼수록 핀 하나하나가 아니라 '어디에 몰려 있는가'가 궁금해진다. 그런데 같은
+// 크기로 두면 핀이 서로 겹쳐 덩어리로 뭉개지고, 정작 밀집도는 더 안 보인다. 한 단계 작게.
+export const PIN_COMPACT: PinSize = { width: 24, height: 30, anchorX: 12, anchorY: Math.round(30 * PIN_TIP_RATIO) };
 
 /**
  * 지도 마커용 SVG 문자열. 색을 바꾸는 대신 크기와 흰 테두리로 선택 상태를 알린다 —
