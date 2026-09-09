@@ -58,6 +58,18 @@ function geoErrorMessage(err: GeolocationPositionError): string {
 export default function Page() {
   const isDesktop = useIsDesktop();
   const queryClient = useQueryClient();
+  /*
+   * [모바일 홈 링크의 하이드레이션 문제]
+   * 매거진그린 홈 링크를 상단 스택에 추가한 뒤로 콘솔에 React 하이드레이션 에러(#418)가
+   * 뜨기 시작했다. 링크 자체는 정적이라 서버·클라이언트 출력이 다를 이유가 없어야 하는데,
+   * useIsDesktop()이 useSyncExternalStore로 브라우저 값을 구독하는 구조라 첫 렌더 직후
+   * 트리가 통째로 바뀌는 지점이고, 그 경계 바로 안쪽에 노드를 하나 더 얹은 것만으로 이미
+   * 아슬아슬하던 하이드레이션 경계를 건드린 것으로 보인다. 원인을 한 줄로 못 박기보다,
+   * 이 링크를 마운트된 뒤에만 그려서 첫 렌더(서버·클라이언트 공통)를 아예 건드리지 않게
+   * 만드는 쪽이 확실하다 — 화면에는 마운트 직후 바로 나타나 체감 차이가 없다.
+   */
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const region = useGardenMapStore((s) => s.region);
   const searchTerm = useGardenMapStore((s) => s.searchTerm);
   const setSearchTerm = useGardenMapStore((s) => s.setSearchTerm);
@@ -116,7 +128,9 @@ export default function Page() {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [showResearchHere, activeGroup, activeSub]);
+    // mounted: 홈 링크가 마운트된 다음 순간(아래) 스택 높이가 늘어나므로, 그때 한 번 더
+    // 재보지 않으면 시트 윗선이 링크와 겹친다.
+  }, [showResearchHere, activeGroup, activeSub, mounted]);
 
   const bizQuery = useBizSearch(region, submittedTerm);
   const parkQuery = useParkSearch(submittedTerm);
@@ -378,14 +392,17 @@ export default function Page() {
             검색 기능을 가리지 않는다).
             target="_top": 이 앱은 magazinegreen.co.kr/garden-map 에서 iframe 으로도
             열린다. target 없이 두면 iframe 안에서 다시 홈페이지를 여는 꼴이 되어 액자
-            속 액자처럼 보인다. _top 은 iframe 이 아닐 때는 그냥 현재 창 이동과 같다. */}
-        <a
-          href="https://magazinegreen.co.kr"
-          target="_top"
-          className="tp-caption pointer-events-auto inline-flex w-fit items-center gap-1.5 self-start rounded-2xl bg-[var(--color-deep-blue)]/90 px-3 py-1 text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
-        >
-          ✳ MAGAZINE GREEN
-        </a>
+            속 액자처럼 보인다. _top 은 iframe 이 아닐 때는 그냥 현재 창 이동과 같다.
+            mounted 로 감싼 이유는 위 [모바일 홈 링크의 하이드레이션 문제] 참고. */}
+        {mounted && (
+          <a
+            href="https://magazinegreen.co.kr"
+            target="_top"
+            className="tp-caption pointer-events-auto inline-flex w-fit items-center gap-1.5 self-start rounded-2xl bg-[var(--color-deep-blue)]/90 px-3 py-1 text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+          >
+            ✳ MAGAZINE GREEN
+          </a>
+        )}
         <div className="pointer-events-auto">
           <TopBar onSubmit={runSearch} />
         </div>
