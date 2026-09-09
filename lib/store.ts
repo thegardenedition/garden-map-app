@@ -32,6 +32,13 @@ interface GardenMapState {
   sheetSnap: SheetSnap;
   setSheetSnap: (s: SheetSnap) => void;
 
+  // [장소를 고르기 전에 펼쳐둔 위치를 기억한다]
+  // 리스트를 full 까지 열어서 보다가 장소를 하나 탭하면 시트가 peek 으로 강제 축소된다(상세를
+  // 볼 공간을 만들려고). 그런데 상세를 닫을 때 무조건 half 로 돌아가 버려서, 애써 full 까지
+  // 열어놨던 게 사라졌었다. 선택 직전 위치를 여기 담아뒀다가 닫을 때 그대로 복원한다.
+  // null 이면 "지금 기억해둔 위치 없음"이고, 다른 장소로 갈아탈 때는 이미 있는 값을 덮어쓰지 않는다.
+  preSelectSnap: SheetSnap | null;
+
   nearbyMode: boolean;
   setNearbyMode: (v: boolean) => void;
 
@@ -56,10 +63,19 @@ export const useGardenMapStore = create<GardenMapState>((set) => ({
   setBounds: (b) => set((s) => ({ bounds: { ...s.bounds, ...b } })),
 
   selectedPlaceId: null,
-  selectPlace: (selectedPlaceId) => set({ selectedPlaceId, sheetSnap: selectedPlaceId ? "peek" : "half" }),
+  selectPlace: (selectedPlaceId) =>
+    set((s) => {
+      if (selectedPlaceId) {
+        // 이미 다른 장소를 보고 있던 중이라면(갈아타기) 최초에 기억해둔 위치를 덮어쓰지 않는다.
+        const preSelectSnap = s.selectedPlaceId ? s.preSelectSnap : s.sheetSnap;
+        return { selectedPlaceId, sheetSnap: "peek" as SheetSnap, preSelectSnap };
+      }
+      return { selectedPlaceId: null, sheetSnap: s.preSelectSnap ?? "peek", preSelectSnap: null };
+    }),
 
-  sheetSnap: "half",
+  sheetSnap: "peek",
   setSheetSnap: (sheetSnap) => set({ sheetSnap }),
+  preSelectSnap: null,
 
   nearbyMode: false,
   setNearbyMode: (nearbyMode) => set({ nearbyMode }),
@@ -72,7 +88,8 @@ export const useGardenMapStore = create<GardenMapState>((set) => ({
       activeSub: null,
       bounds: INITIAL_BOUNDS,
       selectedPlaceId: null,
-      sheetSnap: "half",
+      sheetSnap: "peek",
+      preSelectSnap: null,
       nearbyMode: false,
     }),
 }));
