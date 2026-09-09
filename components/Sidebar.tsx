@@ -22,6 +22,7 @@ export default function Sidebar({
   onSelectPlace,
   onClosePlace,
   statusLabel,
+  onExitMode,
   onReset,
   canReset,
 }: {
@@ -36,7 +37,9 @@ export default function Sidebar({
   region: Region;
   onSelectPlace: (p: Place) => void;
   onClosePlace: () => void;
-  statusLabel: string; // "내 위치 · 반경 5km" 또는 "전국 · 검색어를 입력해주세요" 등, 실제 검색 상태 기준
+  statusLabel: string; // "내 주변 · 반경 2km" / "검색 · 전국 · ..." / "지도 탐색 · ..." — 모드 이름이 앞에 붙는다
+  // 검색·내 주변 모드일 때만 넘어온다. 필터는 그대로 두고 모드만 벗어난다(초기화와 다르다).
+  onExitMode?: () => void;
   onReset?: () => void;
   canReset?: boolean;
 }) {
@@ -101,8 +104,16 @@ export default function Sidebar({
         <FilterChips onReset={onReset} canReset={canReset} />
       </div>
 
-      <div className="mt-3 flex flex-shrink-0 items-center justify-between px-6">
-        <span className="tp-caption text-[var(--color-neon-yellow)]">{statusLabel}</span>
+      <div className="mt-3 flex flex-shrink-0 items-center justify-between gap-2 px-6">
+        <span className="tp-caption min-w-0 truncate text-[var(--color-neon-yellow)]">{statusLabel}</span>
+        {onExitMode && (
+          <button
+            onClick={onExitMode}
+            className="tp-caption flex-shrink-0 rounded-full border border-white/25 px-2.5 py-1 text-[11px] text-white/70"
+          >
+            지도 탐색으로 ✕
+          </button>
+        )}
       </div>
       <div className="px-6 pb-2 pt-1 text-[11px] text-white/50">
         {isLoading ? "검색 중..." : hasSearched ? `${places.length}곳 표시 중${activeGroupLabel ? ` (${activeGroupLabel})` : ""}` : ""}

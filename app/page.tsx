@@ -60,6 +60,7 @@ export default function Page() {
   const queryClient = useQueryClient();
   const region = useGardenMapStore((s) => s.region);
   const searchTerm = useGardenMapStore((s) => s.searchTerm);
+  const setSearchTerm = useGardenMapStore((s) => s.setSearchTerm);
   const activeGroup = useGardenMapStore((s) => s.activeGroup);
   const activeSub = useGardenMapStore((s) => s.activeSub);
   const selectedPlaceId = useGardenMapStore((s) => s.selectedPlaceId);
@@ -134,6 +135,21 @@ export default function Page() {
   // 한번 검색하거나 "내 주변"에 들어가면 브라우저 새로고침 말고는 처음 상태로 돌아갈 방법이
   // 없었다. 스토어 상태(지역/검색어/필터/선택)와 이 컴포넌트의 지역 상태(제출된 검색어,
   // 좌표들)를 한꺼번에 되돌린다 — 둘 중 하나만 지우면 유령 상태가 남는다.
+  /*
+   * [모드에서 빠져나오는 길]
+   * 검색·내 주변에 한번 들어가면 나오는 길이 "초기화" 하나뿐이었다. 그런데 초기화는
+   * 카테고리 필터와 지역까지 전부 되돌리므로, "검색만 그만두고 지금 필터 그대로 지도를
+   * 둘러보고 싶다"는 흔한 요구를 들어줄 방법이 없었다. 특히 내 주변은 한번 찍으면 지도를
+   * 옮겨도 그 자리 결과에 묶여 있어서 갇힌 느낌을 준다.
+   * 이 핸들러는 모드만 벗기고 필터·지역은 그대로 둔다.
+   */
+  const exitToBrowse = useCallback(() => {
+    setSubmittedTerm("");
+    setSearchTerm("");
+    setNearbyCoords(null);
+    setMovedCoords(null);
+  }, [setSearchTerm]);
+
   const handleReset = useCallback(() => {
     resetStore();
     setSubmittedTerm("");
@@ -249,15 +265,21 @@ export default function Page() {
   // 반경은 결과에 맞춰 달라지므로(조밀한 곳은 2km, 한적한 곳은 20km) 실제로 쓴 값을 밝힌다.
   // 적게 나왔을 때 그게 고장이 아니라 "그 반경 안에 정말 없다"는 뜻임을 알 수 있어야 한다.
   const nearbyRadiusKm = nearbyQuery.data ? Math.round(nearbyQuery.data.radiusM / 1000) : null;
+  /*
+   * [지금 어느 모드인지 이름을 붙인다]
+   * 세 모드는 배타적이고 결과가 오는 곳이 서로 다른데, 화면에는 범위만 적혀 있어서 지금
+   * 무엇을 보고 있는지 알기 어려웠다. "지금 보이는 지도 영역"과 "내 위치 · 반경 2km"가
+   * 어떻게 다른지는 코드를 봐야 알 수 있다. 모드 이름을 앞에 세운다.
+   */
   const statusLabel = isNearbyMode
     ? nearbyRadiusKm
-      ? `내 위치 · 반경 ${nearbyRadiusKm}km`
-      : "내 위치 · 찾는 중"
+      ? `내 주변 · 반경 ${nearbyRadiusKm}km`
+      : "내 주변 · 찾는 중"
     : isSearchMode
-      ? `${region} · "${submittedTerm}"`
+      ? `검색 · ${region} · "${submittedTerm}"`
       : isViewportScope
-        ? "지금 보이는 지도 영역"
-        : `${region} · 지역별 분포 (확대하면 전부 표시)`;
+        ? "지도 탐색 · 지금 보이는 영역"
+        : `지도 탐색 · ${region} 분포 (확대하면 전부 표시)`;
 
   const mapCanvas = (
     <MapCanvas
@@ -293,6 +315,7 @@ export default function Page() {
           onSelectPlace={handleSelect}
           onClosePlace={() => selectPlace(null)}
           statusLabel={statusLabel}
+          onExitMode={isBrowseMode ? undefined : exitToBrowse}
           onReset={handleReset}
           canReset={canReset}
         />
@@ -355,8 +378,16 @@ export default function Page() {
       </div>
 
       <BottomSheet snap={selectedPlaceId ? "peek" : sheetSnap} onSnapChange={setSheetSnap} dragHandleLabel="결과 목록 시트">
-        <div className="flex items-center justify-between px-[18px] pt-0.5">
-          <span className="tp-caption text-[var(--color-deep-blue)]">{statusLabel}</span>
+        <div className="flex items-center justify-between gap-2 px-[18px] pt-0.5">
+          <span className="tp-caption min-w-0 truncate text-[var(--color-deep-blue)]">{statusLabel}</span>
+          {!isBrowseMode && (
+            <button
+              onClick={exitToBrowse}
+              className="tp-caption flex-shrink-0 rounded-full border border-[var(--color-deep-blue)]/25 px-2.5 py-1 text-[11px] text-[var(--color-deep-blue)]/75"
+            >
+              지도 탐색으로 ✕
+            </button>
+          )}
         </div>
         <div className="px-[18px] pb-1 pt-1 text-[11px] text-[#8A90B4]">
           {isLoading ? "검색 중..." : hasSearched ? `${places.length}곳 표시 중${activeGroupLabel ? ` (${activeGroupLabel})` : ""}` : ""}
