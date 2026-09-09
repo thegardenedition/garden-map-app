@@ -365,7 +365,13 @@ export default function Page() {
     <div className="relative mx-auto h-[100dvh] w-full overflow-hidden bg-[var(--color-deep-blue)]">
       {mapCanvas}
 
-      <div ref={topStackRef} className="absolute inset-x-3 top-3 z-[20] flex flex-col gap-2">
+      {/* [빈 곳으로는 지도를 만질 수 있어야 한다]
+          이 상자는 배지·검색바·칩을 세로로 쌓는 껍데기인데, 눈에는 안 보여도 x 12~381,
+          y 12~150 의 직사각형 전체가 터치를 가로챘다. 배지 오른쪽 빈자리도, 검색바와 칩
+          사이 8px 틈도 전부 그렇다. 그래서 화면 위 138px 띠에서는 지도를 끌 수도, 그 자리
+          마커를 누를 수도 없었다 — 지도는 보이는데 반응하지 않으니 고장으로 느껴진다.
+          껍데기는 터치를 흘려보내고, 실제 조작이 필요한 자식만 받는다. */}
+      <div ref={topStackRef} className="pointer-events-none absolute inset-x-3 top-3 z-[20] flex flex-col gap-2">
         {/* 데스크탑 사이드바에는 브랜드 배지가 있지만 모바일 상단바에는 아예 없었다 —
             지도를 iframe 밖에서 직접 열거나 북마크한 사람은 매거진그린으로 돌아갈 길이
             없었다. 검색창 위에 작은 링크 하나만 얹는다(기존 플로팅 레이아웃 그대로,
@@ -376,12 +382,16 @@ export default function Page() {
         <a
           href="https://magazinegreen.co.kr"
           target="_top"
-          className="tp-caption inline-flex w-fit items-center gap-1.5 self-start rounded-2xl bg-[var(--color-deep-blue)]/90 px-3 py-1 text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+          className="tp-caption pointer-events-auto inline-flex w-fit items-center gap-1.5 self-start rounded-2xl bg-[var(--color-deep-blue)]/90 px-3 py-1 text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
         >
           ✳ MAGAZINE GREEN
         </a>
-        <TopBar onSubmit={runSearch} />
-        <FilterChips onReset={handleReset} canReset={canReset} />
+        <div className="pointer-events-auto">
+          <TopBar onSubmit={runSearch} />
+        </div>
+        <div className="pointer-events-auto">
+          <FilterChips onReset={handleReset} canReset={canReset} />
+        </div>
       </div>
 
       {/* [재검색은 스택 밖에 띄운다] 예전에는 이 버튼이 상단 스택 안에 있어서, 뜰 때마다 스택이
@@ -408,14 +418,14 @@ export default function Page() {
               onClick={handleNearby}
               disabled={locating}
               aria-label="내 주변에서 찾기"
-              className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-[var(--color-deep-blue)] bg-white text-lg text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)] disabled:opacity-50"
+              className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full border-2 border-[var(--color-deep-blue)] bg-white text-lg text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)] disabled:opacity-50"
             >
               📍
             </button>
             <button
               onClick={handleLocateOnly}
               aria-label="현재 위치"
-              className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+              className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
             >
               ◎
             </button>

@@ -107,7 +107,11 @@ export default function BottomSheet({
       onDragEnd={handleDragEnd}
     >
       {floatingActions && (
-        <div className="absolute bottom-full right-3.5 mb-[18px] flex flex-col gap-2.5">{floatingActions}</div>
+        // 버튼 사이 간격으로는 지도를 만질 수 있게 한다(상단 스택과 같은 이유).
+        // 껍데기만 터치를 흘려보내고, 버튼 각각이 pointer-events-auto 를 갖는다.
+        <div className="pointer-events-none absolute bottom-full right-3.5 mb-[18px] flex flex-col gap-2.5">
+          {floatingActions}
+        </div>
       )}
 
       <motion.div
