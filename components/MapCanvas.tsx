@@ -174,6 +174,7 @@ export default function MapCanvas({
   const hoverOverlayRef = useRef<any>(null);
   const scriptLoadedRef = useRef(false);
   const isDesktopRef = useRef(isDesktop);
+  const zoomControlRef = useRef<any>(null);
   const onUserPanRef = useRef(onUserPan);
   const onViewportChangeRef = useRef(onViewportChange);
   const hintRef = useRef<HTMLDivElement | null>(null);
@@ -197,6 +198,18 @@ export default function MapCanvas({
     const map = mapRef.current;
     if (!map) return;
     map.setZoomable(!isDesktop);
+
+    // 폭이 860px 경계를 넘나들면 줌 컨트롤도 따라와야 한다. 지도 생성 시점에 한 번만 붙이면
+    // 데스크톱에서 창을 좁혔을 때 컨트롤이 남아 칩 줄과 겹친 채로 있는다.
+    const kakao = window.kakao;
+    if (!kakao?.maps) return;
+    if (isDesktop && !zoomControlRef.current) {
+      zoomControlRef.current = new kakao.maps.ZoomControl();
+      map.addControl(zoomControlRef.current, kakao.maps.ControlPosition.RIGHT);
+    } else if (!isDesktop && zoomControlRef.current) {
+      map.removeControl(zoomControlRef.current);
+      zoomControlRef.current = null;
+    }
   }, [isDesktop]);
 
   // 지도 인스턴스 초기화 — 언마운트 시 완벽한 cleanup(모든 마커/클러스터러/리스너 해제)
@@ -212,7 +225,18 @@ export default function MapCanvas({
           center: new kakao.maps.LatLng(36.2, 127.9),
           level: 12,
         });
-        map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
+        /*
+         * [줌 컨트롤은 데스크톱에만]
+         * 모바일 393×852 에서 재 보니 이 컨트롤이 x 358~390 을 차지해서, "공원/수목원" 칩
+         * (x 271~374)과 16px 겹치고 검색바 위로도 뚫고 올라왔다. 화면 오른쪽 위가 그것 때문에
+         * 어수선했다. 게다가 모바일에서는 핀치로 확대·축소하므로 쓸 일도 없다.
+         * 데스크톱은 다르다 — 거기서는 Ctrl+스크롤로만 확대되게 막아 뒀으므로(아래 wheel 처리)
+         * 이 컨트롤이 유일하게 마우스로 줌하는 길이다. 그래서 데스크톱에만 붙인다.
+         */
+        if (isDesktopRef.current) {
+          zoomControlRef.current = new kakao.maps.ZoomControl();
+          map.addControl(zoomControlRef.current, kakao.maps.ControlPosition.RIGHT);
+        }
 
         // [초기 프레이밍] 예전에는 center+level 을 고정값으로 박아뒀는데, 화면 비율이 조금만
         // 달라져도 프레임이 어긋난다. 실제로 데스크탑에서 열면 북한 전체와 중국 랴오닝·일본
