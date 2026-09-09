@@ -13,18 +13,48 @@ import parkRegistryRaw from "./park-registry.json";
 // 같은 데이터가 D1 에 전국 규모로 있으므로 원천을 하나로 합쳤다. 이제 anon key 도 필요 없다.
 const WORKER_BASE = "https://nongsaro-proxy.chgreena.workers.dev";
 
+// 상태코드를 들고 다니는 오류. 예전에는 `new Error("HTTP 429")` 로 던져서 재시도할지 말지를
+// 판단할 근거가 문자열밖에 없었다. 상태를 필드로 들고 있으면 아래 isRetriableError 와
+// TanStack Query 양쪽이 같은 기준으로 판단할 수 있다. Error 를 상속하므로 기존 catch 는 그대로다.
+export class HttpError extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`HTTP ${status}`);
+    this.name = "HttpError";
+    this.status = status;
+  }
+}
+
+/*
+ * [4xx 는 다시 보내지 않는다]
+ *
+ * 2026-09-09 이전에는 상태코드를 가리지 않고 재시도했다. 그런데 워커에 출처 게이트(403)와
+ * IP 당 요청 한도(429)가 생기면서 그게 곧바로 문제가 됐다. 아래 재시도 3회와 TanStack Query
+ * 의 retry 3회가 곱해져, 429 를 맞은 사용자가 요청을 1번이 아니라 최대 9번 보냈다.
+ * 한도를 넘긴 사람이 한도를 더 밀어붙이는 구조였고, 실패를 확정하기까지 8초 넘게 걸렸다.
+ *
+ * 429 는 서버가 "그만 보내라"고 말하는 것이므로 재시도가 정확히 반대 행동이다. 403 은 다시
+ * 보내도 영원히 같다. 반면 5xx 와 네트워크 오류는 진짜 일시적일 수 있으므로 그대로 재시도한다.
+ */
+export function isRetriableError(err: unknown): boolean {
+  if (err instanceof HttpError) return err.status >= 500;
+  return true; // 네트워크 오류·타임아웃 등 상태코드가 없는 실패
+}
+
 async function fetchWithRetry(url: string, init?: RequestInit, retries = 2): Promise<Response> {
   // [TanStack Query와 별개의 저수준 재시도]
-  // 지수 백오프(Exponential Backoff): 300ms → 900ms. Query 자체의 retry와 이중으로 걸리지 않도록
-  // 여기서는 네트워크 계층(타임아웃/일시적 장애)만 담당하고, 스키마 오류 같은 건 그대로 던진다.
+  // 지수 백오프(Exponential Backoff): 300ms → 900ms. 네트워크 계층(타임아웃/일시적 장애)만
+  // 담당한다. 위 주석대로 4xx 는 여기서 즉시 포기하고 올려 보낸다 — Query 쪽 retry 도 같은
+  // 기준(isRetriableError)을 쓰므로 두 층이 곱해지지 않는다.
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetch(url, init);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new HttpError(res.status);
       return res;
     } catch (err) {
       lastErr = err;
+      if (!isRetriableError(err)) throw err;
       if (attempt < retries) await new Promise((r) => setTimeout(r, 300 * 3 ** attempt));
     }
   }

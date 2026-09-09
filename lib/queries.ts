@@ -5,6 +5,7 @@ import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import type { GroupId, Place, Region, SubId } from "./types";
 import type { Bbox } from "./api";
 import {
+  isRetriableError,
   browseByBbox,
   browseByCategory,
   searchBizPlaces,
@@ -12,6 +13,14 @@ import {
   searchParks,
   fetchProjectPins,
 } from "./api";
+
+/*
+ * [재시도 기준을 lib/api.ts 와 공유한다]
+ * 예전에는 여기 retry 가 상태코드를 가리지 않아서, api.ts 의 저수준 재시도 3회와 곱해져
+ * 한 번의 조회가 최대 9번의 요청이 됐다. 워커에 403(출처 게이트)·429(요청 한도)가 생긴 뒤로는
+ * 그게 곧 "한도를 넘긴 사용자가 한도를 더 밀어붙이는" 동작이었다. 두 층이 같은 기준을 쓰도록
+ * isRetriableError 를 공유한다 - 4xx 는 즉시 포기, 5xx·네트워크 오류만 재시도.
+ */
 
 // [디바운스 / 스로틀]
 // 텍스트 입력(검색어)은 Debounce 300ms: 타이핑이 끝난 뒤에만 API를 호출해 불필요한 요청을 막는다.
@@ -63,7 +72,7 @@ export function useBizSearch(region: Region, keyword: string): UseQueryResult<Pl
     queryFn: () => searchBizPlaces(region, term),
     enabled: term.length > 0,
     // [지수 백오프] TanStack Query 자체 재시도 — 네트워크 계층(api.ts)의 재시도와는 다른 레이어(스키마/서버 오류 대응)
-    retry: 2,
+    retry: (count, err) => isRetriableError(err) && count < 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     staleTime: 60_000,
   });
@@ -78,7 +87,7 @@ export function useParkSearch(keyword: string): UseQueryResult<Place[]> {
     queryKey: ["park-places", term],
     queryFn: () => searchParks(term),
     enabled: term.length > 0,
-    retry: 2,
+    retry: (count, err) => isRetriableError(err) && count < 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     staleTime: 5 * 60_000,
   });
@@ -109,7 +118,7 @@ export function useBrowseSearch(
         ? browseByBbox(snapped, group, sub)
         : browseByCategory(region, group, sub),
     enabled: enabled && (!useBbox || Boolean(snapped)),
-    retry: 2,
+    retry: (count, err) => isRetriableError(err) && count < 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     staleTime: 5 * 60_000,
     // 지도를 움직이는 동안 목록이 빈 화면으로 깜빡이지 않도록 직전 결과를 유지한다.
@@ -128,7 +137,7 @@ export function useNearbySearch(
     queryKey: ["nearby", coords?.lat, coords?.lng, group],
     queryFn: () => searchNearby(coords!.lat, coords!.lng, 5000, group),
     enabled: Boolean(coords),
-    retry: 2,
+    retry: (count, err) => isRetriableError(err) && count < 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     staleTime: 30_000,
   });
@@ -140,6 +149,6 @@ export function useProjectPins() {
     queryKey: ["project-pins"],
     queryFn: fetchProjectPins,
     staleTime: 10 * 60_000,
-    retry: 1,
+    retry: (count, err) => isRetriableError(err) && count < 1,
   });
 }
