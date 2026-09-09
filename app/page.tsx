@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import MapCanvas from "@/components/MapCanvas";
 import TopBar from "@/components/TopBar";
@@ -75,6 +75,15 @@ export default function Page() {
   const [movedCoords, setMovedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [focusTrigger, setFocusTrigger] = useState(0);
   const [locating, setLocating] = useState(false);
+  /*
+   * [시트가 상단 스택을 덮지 않게]
+   * full(90%)로 올리면 시트 윗선이 화면 위 81px 까지 온다. 검색바·필터 칩은 그보다 아래에
+   * 있으므로 칩이 통째로 가려졌다 — 필터를 바꾸려면 시트를 도로 내려야 했다. 스택 높이는
+   * 소분류 칩이나 홈 링크 때문에 늘었다 줄었다 하므로 상수로 못 박을 수 없다. 실제로 재서
+   * 그 아래까지만 올라오게 한다. 못 재면 0 이라 예전과 같이 동작한다.
+   */
+  const topStackRef = useRef<HTMLDivElement | null>(null);
+  const [sheetMinTop, setSheetMinTop] = useState(0);
   // 위치 정확도(m). 브라우저가 알려주는 값으로, 지도 줌과 오차 원을 정하는 데 쓴다.
   const [locateAccuracy, setLocateAccuracy] = useState<number | null>(null);
   // 지도가 멈출 때마다(idle) MapCanvas가 알려주는 현재 화면 영역. 탐색 모드의 조회 범위가 된다.
@@ -98,6 +107,16 @@ export default function Page() {
    * 지도가 스스로 갱신하지 않는 검색·내 주변 모드에서만 띄운다.
    */
   const showResearchHere = Boolean(movedCoords) && !isBrowseMode;
+
+  useEffect(() => {
+    const measure = () => {
+      const el = topStackRef.current;
+      if (el) setSheetMinTop(Math.round(el.getBoundingClientRect().bottom) + 8);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [showResearchHere, activeGroup, activeSub]);
 
   const bizQuery = useBizSearch(region, submittedTerm);
   const parkQuery = useParkSearch(submittedTerm);
@@ -346,7 +365,7 @@ export default function Page() {
     <div className="relative mx-auto h-[100dvh] w-full overflow-hidden bg-[var(--color-deep-blue)]">
       {mapCanvas}
 
-      <div className="absolute inset-x-3 top-3 z-[20] flex flex-col gap-2">
+      <div ref={topStackRef} className="absolute inset-x-3 top-3 z-[20] flex flex-col gap-2">
         {/* 데스크탑 사이드바에는 브랜드 배지가 있지만 모바일 상단바에는 아예 없었다 —
             지도를 iframe 밖에서 직접 열거나 북마크한 사람은 매거진그린으로 돌아갈 길이
             없었다. 검색창 위에 작은 링크 하나만 얹는다(기존 플로팅 레이아웃 그대로,
@@ -363,37 +382,55 @@ export default function Page() {
         </a>
         <TopBar onSubmit={runSearch} />
         <FilterChips onReset={handleReset} canReset={canReset} />
-        {showResearchHere && (
-          <button
-            onClick={handleResearchHere}
-            className="tp-caption mx-auto rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
-          >
-            ⟳ 이 근처에서 찾기
-          </button>
-        )}
       </div>
 
-      <div className="absolute bottom-[calc(30vh+18px)] right-3.5 z-[30] flex flex-col gap-2.5">
+      {/* [재검색은 스택 밖에 띄운다] 예전에는 이 버튼이 상단 스택 안에 있어서, 뜰 때마다 스택이
+          한 줄 길어지고 그만큼 지도가 좁아졌다. 홈 링크까지 들어와 스택이 더 길어졌으니 더욱
+          그렇다. 지도 위에 겹쳐 띄우면 스택 높이가 변하지 않는다. 데스크톱도 같은 방식이다. */}
+      {showResearchHere && (
         <button
-          onClick={handleNearby}
-          disabled={locating}
-          aria-label="내 주변에서 찾기"
-          className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-[var(--color-deep-blue)] bg-white text-lg text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)] disabled:opacity-50"
+          onClick={handleResearchHere}
+          className="tp-caption absolute left-1/2 z-[25] -translate-x-1/2 rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+          style={{ top: sheetMinTop || 160 }}
         >
-          📍
+          ⟳ 이 근처에서 찾기
         </button>
-        <button
-          onClick={handleLocateOnly}
-          aria-label="현재 위치"
-          className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
-        >
-          ◎
-        </button>
-      </div>
+      )}
 
-      <BottomSheet snap={selectedPlaceId ? "peek" : sheetSnap} onSnapChange={setSheetSnap} dragHandleLabel="결과 목록 시트">
-        <div className="flex items-center justify-between gap-2 px-[18px] pt-0.5">
-          <span className="tp-caption min-w-0 truncate text-[var(--color-deep-blue)]">{statusLabel}</span>
+      <BottomSheet
+        snap={selectedPlaceId ? "peek" : sheetSnap}
+        onSnapChange={setSheetSnap}
+        dragHandleLabel="결과 목록 시트"
+        minTopPx={sheetMinTop}
+        floatingActions={
+          <>
+            <button
+              onClick={handleNearby}
+              disabled={locating}
+              aria-label="내 주변에서 찾기"
+              className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-[var(--color-deep-blue)] bg-white text-lg text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)] disabled:opacity-50"
+            >
+              📍
+            </button>
+            <button
+              onClick={handleLocateOnly}
+              aria-label="현재 위치"
+              className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+            >
+              ◎
+            </button>
+          </>
+        }
+      >
+        {/* [두 줄을 한 줄로] 손잡이 터치 영역을 44px 로 키운 만큼 목록이 줄어드는데, 상태와
+            건수는 원래 따로 있을 이유가 없었다. 합쳐서 그 높이를 되찾는다. */}
+        <div className="flex flex-shrink-0 items-center justify-between gap-2 px-[18px] pb-1.5">
+          <span className="tp-caption min-w-0 truncate text-[var(--color-deep-blue)]">
+            {statusLabel}
+            <span className="ml-1.5 text-[11px] font-normal text-[#8A90B4]">
+              {isLoading ? "검색 중..." : hasSearched ? `${places.length}곳${activeGroupLabel ? ` · ${activeGroupLabel}` : ""}` : ""}
+            </span>
+          </span>
           {!isBrowseMode && (
             <button
               onClick={exitToBrowse}
@@ -402,9 +439,6 @@ export default function Page() {
               지도 탐색으로 ✕
             </button>
           )}
-        </div>
-        <div className="px-[18px] pb-1 pt-1 text-[11px] text-[#8A90B4]">
-          {isLoading ? "검색 중..." : hasSearched ? `${places.length}곳 표시 중${activeGroupLabel ? ` (${activeGroupLabel})` : ""}` : ""}
         </div>
         <PlaceList places={places} hasSearched={hasSearched && !isLoading} onSelect={handleSelect} />
       </BottomSheet>
