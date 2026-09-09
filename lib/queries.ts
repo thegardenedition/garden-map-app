@@ -129,13 +129,17 @@ export function useBrowseSearch(
 // [내 주변 + 카테고리] 그룹을 쿼리 키와 인자에 함께 넘긴다. 예전에는 반경 결과를 받아온 뒤
 // 클라이언트에서 걸렀는데, 반경 안에 조경회사가 200건이고 자재가 3건이면 자재 칩을 눌렀을 때
 // 3건만 남는 식이라 "이 근처 자재상 전체"를 볼 수 없었다. 이제 카테고리별로 각각 반경을 조회한다.
+// "내 주변에서 찾기"가 훑는 반경. 지도를 이 범위에 맞춰 보여줘야 하므로 화면 쪽에서도 쓴다.
+// 예전에는 이 값이 queryFn 안에만 있어서, 지도는 이 숫자를 모른 채 제멋대로 확대했다.
+export const NEARBY_RADIUS_M = 5000;
+
 export function useNearbySearch(
   coords: { lat: number; lng: number } | null,
   group: GroupId | null
 ): UseQueryResult<Place[]> {
   return useQuery({
     queryKey: ["nearby", coords?.lat, coords?.lng, group],
-    queryFn: () => searchNearby(coords!.lat, coords!.lng, 5000, group),
+    queryFn: () => searchNearby(coords!.lat, coords!.lng, NEARBY_RADIUS_M, group),
     enabled: Boolean(coords),
     retry: (count, err) => isRetriableError(err) && count < 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),

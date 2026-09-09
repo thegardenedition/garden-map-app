@@ -3,18 +3,12 @@
 import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Place } from "@/lib/types";
-import { SUB_DEFS } from "@/lib/types";
+import { SUB_DEFS, formatDistance } from "@/lib/types";
 import { CategoryIcon, GROUP_COLOR } from "@/lib/icons";
 import EmptyState from "./EmptyState";
 
 // [리스트 가상화] 뷰포트에 보이는 행만 렌더링해 결과가 수백~수천 건이어도 DOM 노드 수를 상수로 유지한다.
 const ROW_HEIGHT = 78;
-
-function formatDistance(m: number | null): string {
-  if (m == null) return "";
-  if (m < 1000) return `${Math.round(m)}m`;
-  return `${(m / 1000).toFixed(1)}km`;
-}
 
 export default function PlaceList({
   places,

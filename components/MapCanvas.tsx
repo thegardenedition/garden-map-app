@@ -4,6 +4,7 @@
 import { useEffect, useRef } from "react";
 import Script from "next/script";
 import type { Place, ProjectPin } from "@/lib/types";
+import { SUB_DEFS, formatDistance } from "@/lib/types";
 import {
   PIN_DEFAULT,
   PIN_SELECTED,
@@ -71,6 +72,45 @@ export interface MapCanvasHandle {
   panTo: (lng: number, lat: number, level?: number) => void;
 }
 
+/*
+ * [PC 핀 호버 툴팁]
+ * 데스크톱에서는 핀을 눌러 상세를 열기 전에 "이게 뭔지"부터 알고 싶다. 지금은 눌러야만 알 수
+ * 있어서, 원하는 곳을 찾을 때까지 핀을 하나씩 눌렀다 닫았다 해야 했다.
+ *
+ * 터치 기기에는 붙이지 않는다. 모바일 브라우저는 탭에도 mouseover 를 쏘기 때문에, 손가락을
+ * 뗀 뒤에도 툴팁이 남아 지도를 가린다.
+ */
+function escapeHtml(v: string): string {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function hoverTooltipHtml(place: Place): string {
+  const sub = SUB_DEFS[place.categoryDepth1]?.find((d) => d.id === place.categoryDepth2)?.label ?? "";
+  const dist = formatDistance(place.distanceM);
+  const meta = [sub, dist].filter(Boolean).join(" · ");
+  // pointer-events:none 이 중요하다. 툴팁이 마우스를 가로채면 그 즉시 mouseout 이 떠서
+  // 툴팁이 깜빡이고, 핀 클릭도 막힌다.
+  return (
+    '<div style="pointer-events:none;transform:translateY(-46px);max-width:260px;' +
+    'background:#fff;color:#06107D;border-radius:12px;padding:9px 12px;' +
+    'box-shadow:0 6px 20px rgba(0,0,0,0.22);font-size:12.5px;line-height:1.45;">' +
+    '<div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+    escapeHtml(place.placeName) +
+    "</div>" +
+    (meta ? '<div style="opacity:0.62;font-size:11.5px;margin-top:1px;">' + escapeHtml(meta) + "</div>" : "") +
+    (place.address
+      ? '<div style="opacity:0.75;font-size:11.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+        escapeHtml(place.address) +
+        "</div>"
+      : "") +
+    "</div>"
+  );
+}
+
 export default function MapCanvas({
   places,
   selectedPlaceId,
@@ -79,6 +119,7 @@ export default function MapCanvas({
   focusTrigger,
   focusCoords,
   focusAccuracy,
+  focusRadius,
   isDesktop = false,
   projectPins = [],
   onUserPan,
@@ -90,7 +131,8 @@ export default function MapCanvas({
   onPrefetchPlace?: (place: Place) => void;
   focusTrigger: number; // 값이 바뀔 때마다 이동(검색 완료 또는 위치 확인 신호)
   focusCoords?: { lat: number; lng: number } | null; // 있으면 첫 결과 대신 이 좌표로 이동
-  focusAccuracy?: number | null; // 브라우저가 알려준 위치 오차(m). 줌 단계와 오차 원에 쓴다.
+  focusAccuracy?: number | null; // 브라우저가 알려준 위치 오차(m). 오차 원 크기에 쓴다.
+  focusRadius?: number | null; // 반경 검색 중이면 그 반경(m). 지도를 이 범위에 맞춘다.
   isDesktop?: boolean; // 데스크탑에서는 Ctrl+스크롤로만 확대/축소되도록 제스처를 가로챈다
   projectPins?: ProjectPin[]; // 채널그린 프로젝트 게시글 — 검색과 무관하게 항상 표시
   onUserPan?: (center: { lat: number; lng: number }) => void; // 사용자가 지도를 손으로 드래그해서 옮겼을 때만 호출("현 위치에서 재검색" 버튼 트리거용). panTo() 같은 프로그램적 이동에는 호출되지 않는다.
@@ -107,6 +149,8 @@ export default function MapCanvas({
   const isolatedMarkerRef = useRef<any>(null);
   const userMarkerRef = useRef<any>(null);
   const accuracyCircleRef = useRef<any>(null);
+  const searchCircleRef = useRef<any>(null);
+  const hoverOverlayRef = useRef<any>(null);
   const scriptLoadedRef = useRef(false);
   const isDesktopRef = useRef(isDesktop);
   const onUserPanRef = useRef(onUserPan);
@@ -292,6 +336,8 @@ export default function MapCanvas({
       if (isolatedMarkerRef.current) isolatedMarkerRef.current.setMap(null);
       if (userMarkerRef.current) userMarkerRef.current.setMap(null);
       if (accuracyCircleRef.current) accuracyCircleRef.current.setMap(null);
+      if (searchCircleRef.current) searchCircleRef.current.setMap(null);
+      if (hoverOverlayRef.current) hoverOverlayRef.current.setMap(null);
       projectMarkersRef.current.forEach((m) => m.setMap(null));
       projectMarkersRef.current = [];
       if (clustererRef.current) clustererRef.current.clear();
@@ -310,6 +356,11 @@ export default function MapCanvas({
     clusterer.clear();
     Object.values(markersRef.current).forEach((m) => m.setMap(null));
     markersRef.current = {};
+    // 호버 중이던 핀이 이번 렌더에서 사라질 수 있다. 그러면 mouseout 이 오지 않아 툴팁만 남는다.
+    if (hoverOverlayRef.current) {
+      hoverOverlayRef.current.setMap(null);
+      hoverOverlayRef.current = null;
+    }
 
     const newMarkers: any[] = [];
     for (const place of places) {
@@ -321,6 +372,24 @@ export default function MapCanvas({
         onSelectPlace(place.placeId);
         onPrefetchPlace?.(place);
       });
+      if (isDesktop) {
+        kakao.maps.event.addListener(marker, "mouseover", () => {
+          if (hoverOverlayRef.current) hoverOverlayRef.current.setMap(null);
+          hoverOverlayRef.current = new kakao.maps.CustomOverlay({
+            position: marker.getPosition(),
+            content: hoverTooltipHtml(place),
+            yAnchor: 1,
+            zIndex: 100,
+          });
+          hoverOverlayRef.current.setMap(map);
+        });
+        kakao.maps.event.addListener(marker, "mouseout", () => {
+          if (hoverOverlayRef.current) {
+            hoverOverlayRef.current.setMap(null);
+            hoverOverlayRef.current = null;
+          }
+        });
+      }
       markersRef.current[place.placeId] = marker;
       newMarkers.push(marker);
     }
@@ -329,7 +398,7 @@ export default function MapCanvas({
     return () => {
       // 다음 렌더링 전에 이전 마커 정리(위에서도 하지만, effect cleanup으로 이중 안전망)
     };
-  }, [places, onSelectPlace, onPrefetchPlace]);
+  }, [places, onSelectPlace, onPrefetchPlace, isDesktop]);
 
   // [프로젝트 연동] 검색/필터와 무관하게 항상 떠 있는 별도 레이어. 클러스터러에는 섞지 않고
   // (개수가 적고 항상 눈에 띄어야 하므로) 별도 마커로 직접 얹는다. 클릭하면 이 지도 앱의
@@ -371,8 +440,50 @@ export default function MapCanvas({
        * 실제로는 3km 밖일 수 있다. 거친 값은 거칠게 보여주는 편이 정직하다.
        */
       const acc = typeof focusAccuracy === "number" ? focusAccuracy : null;
-      const level = acc === null ? 6 : acc <= 200 ? 5 : acc <= 1000 ? 6 : acc <= 5000 ? 7 : 8;
-      map.setLevel(level, { animate: true });
+
+      /*
+       * [검색한 범위를 그대로 보여준다 — 실측으로 드러난 어긋남]
+       * 반경 5km 로 찾아 놓고 화면은 가로 1.7km 만 보여주고 있었다(2026-09-09 배포본 실측).
+       * 검색 지름이 10km 이니 화면이 검색 범위의 6분의 1 이었던 셈이다. 목록에는 지도에서
+       * 보이지도 않는 곳이 잔뜩 나오고, 사용자는 "왜 이게 여기 있지"를 알 수 없다.
+       *
+       * 앞선 커밋에서 나는 이 확대 단계를 '위치 오차'로 정했는데, 그건 두 가지를 섞은 것이다.
+       * 오차는 '이 점을 얼마나 믿을 수 있나'이고, 화면 범위는 '무엇을 훑었나'이다. 오차가
+       * 작을수록 더 당기게 만들어 놨으니 정확한 위치일수록 검색 범위와 더 어긋났다.
+       * 반경 검색 중이면 그 반경에 화면을 맞추고, 오차는 아래 원으로만 표현한다.
+       */
+      if (typeof focusRadius === "number" && focusRadius > 0) {
+        const dLat = focusRadius / 111320;
+        const dLng = focusRadius / (111320 * Math.max(Math.cos((focusCoords.lat * Math.PI) / 180), 0.01));
+        map.setBounds(
+          new kakao.maps.LatLngBounds(
+            new kakao.maps.LatLng(focusCoords.lat - dLat, focusCoords.lng - dLng),
+            new kakao.maps.LatLng(focusCoords.lat + dLat, focusCoords.lng + dLng)
+          )
+        );
+      } else {
+        // 검색이 아니라 "현재 위치만 보기"다. 훑은 범위가 없으니 오차만큼만 당긴다.
+        const level = acc === null ? 6 : acc <= 200 ? 5 : acc <= 1000 ? 6 : acc <= 5000 ? 7 : 8;
+        map.setLevel(level, { animate: true });
+      }
+
+      // 훑은 범위를 눈에 보이게 그린다. 목록에 있는데 화면 밖인 곳이 왜 나왔는지 설명해 준다.
+      if (searchCircleRef.current) {
+        searchCircleRef.current.setMap(null);
+        searchCircleRef.current = null;
+      }
+      if (typeof focusRadius === "number" && focusRadius > 0) {
+        searchCircleRef.current = new kakao.maps.Circle({
+          center: loc,
+          radius: focusRadius,
+          strokeWeight: 2,
+          strokeColor: "#06107D",
+          strokeOpacity: 0.35,
+          fillColor: "#06107D",
+          fillOpacity: 0.04,
+        });
+        searchCircleRef.current.setMap(map);
+      }
 
       // 오차 원. 점 하나로 끝내면 얼마나 믿을 값인지 알 길이 없다. 오차가 작을 때는
       // 원이 점에 묻히므로 그리지 않는다.

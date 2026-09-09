@@ -16,6 +16,7 @@ import {
   useNearbySearch,
   useBrowseSearch,
   useProjectPins,
+  NEARBY_RADIUS_M,
   VIEWPORT_MAX_LEVEL,
   type Viewport,
 } from "@/lib/queries";
@@ -263,6 +264,7 @@ export default function Page() {
       focusTrigger={focusTrigger}
       focusCoords={nearbyCoords ?? locateCoords}
       focusAccuracy={locateAccuracy}
+      focusRadius={isNearbyMode ? NEARBY_RADIUS_M : null}
       isDesktop={isDesktop}
       projectPins={projectPinsQuery.data ?? []}
       onUserPan={handleUserPan}

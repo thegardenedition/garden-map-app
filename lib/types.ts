@@ -44,6 +44,14 @@ export interface Place {
   species?: string[]; // 봄·여름·가을·겨울 대표 수종
 }
 
+// 목록과 지도 툴팁이 같은 규칙으로 거리를 쓰도록 여기 둔다. 화면 문구용 상수(GROUP_LABEL 등)가
+// 이미 이 파일에 있으므로 같은 자리에 모은다.
+export function formatDistance(m: number | null | undefined): string {
+  if (m == null) return "";
+  if (m < 1000) return `${Math.round(m)}m`;
+  return `${(m / 1000).toFixed(1)}km`;
+}
+
 export const GROUP_LABEL: Record<GroupId, string> = {
   company: "조경회사",
   material: "조경수/자재",
