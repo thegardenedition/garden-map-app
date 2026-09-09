@@ -584,7 +584,7 @@ export async function searchParks(keyword: string, browseAll = false): Promise<P
 // 갖고 있어서 공원/수목원은 애초에 대상이 아니었다. 공원 카테고리를 선택하고 "내 주변에서 찾기"를
 // 눌러도 계속 0건이었던 이유가 이거다. 별도 geo 인덱스를 새로 만드는 대신, 이미 세션에 캐시된
 // 전국 공원 좌표(fetchAllParks)를 하버사인 공식으로 직접 거리 계산해서 반경 안의 것만 골라낸다.
-function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);

@@ -78,6 +78,7 @@ export default function MapCanvas({
   onPrefetchPlace,
   focusTrigger,
   focusCoords,
+  focusAccuracy,
   isDesktop = false,
   projectPins = [],
   onUserPan,
@@ -89,6 +90,7 @@ export default function MapCanvas({
   onPrefetchPlace?: (place: Place) => void;
   focusTrigger: number; // 값이 바뀔 때마다 이동(검색 완료 또는 위치 확인 신호)
   focusCoords?: { lat: number; lng: number } | null; // 있으면 첫 결과 대신 이 좌표로 이동
+  focusAccuracy?: number | null; // 브라우저가 알려준 위치 오차(m). 줌 단계와 오차 원에 쓴다.
   isDesktop?: boolean; // 데스크탑에서는 Ctrl+스크롤로만 확대/축소되도록 제스처를 가로챈다
   projectPins?: ProjectPin[]; // 채널그린 프로젝트 게시글 — 검색과 무관하게 항상 표시
   onUserPan?: (center: { lat: number; lng: number }) => void; // 사용자가 지도를 손으로 드래그해서 옮겼을 때만 호출("현 위치에서 재검색" 버튼 트리거용). panTo() 같은 프로그램적 이동에는 호출되지 않는다.
@@ -104,6 +106,7 @@ export default function MapCanvas({
   const projectMarkersRef = useRef<any[]>([]);
   const isolatedMarkerRef = useRef<any>(null);
   const userMarkerRef = useRef<any>(null);
+  const accuracyCircleRef = useRef<any>(null);
   const scriptLoadedRef = useRef(false);
   const isDesktopRef = useRef(isDesktop);
   const onUserPanRef = useRef(onUserPan);
@@ -288,6 +291,7 @@ export default function MapCanvas({
       markersRef.current = {};
       if (isolatedMarkerRef.current) isolatedMarkerRef.current.setMap(null);
       if (userMarkerRef.current) userMarkerRef.current.setMap(null);
+      if (accuracyCircleRef.current) accuracyCircleRef.current.setMap(null);
       projectMarkersRef.current.forEach((m) => m.setMap(null));
       projectMarkersRef.current = [];
       if (clustererRef.current) clustererRef.current.clear();
@@ -359,7 +363,37 @@ export default function MapCanvas({
     if (focusCoords) {
       const loc = new kakao.maps.LatLng(focusCoords.lat, focusCoords.lng);
       map.panTo(loc);
-      map.setLevel(6, { animate: true });
+      /*
+       * [정확도에 맞춰 확대한다]
+       * 예전에는 오차와 무관하게 항상 level 6 으로 바짝 당겼다. 브라우저가 Wi-Fi 로 3km
+       * 오차의 위치를 줬을 때도 마찬가지였다. 그러면 엉뚱한 지점을 콕 집어 확대해 놓고
+       * 노란 점까지 찍으니, 사용자 눈에는 "지도가 내 위치를 정확히 안다"고 보인다.
+       * 실제로는 3km 밖일 수 있다. 거친 값은 거칠게 보여주는 편이 정직하다.
+       */
+      const acc = typeof focusAccuracy === "number" ? focusAccuracy : null;
+      const level = acc === null ? 6 : acc <= 200 ? 5 : acc <= 1000 ? 6 : acc <= 5000 ? 7 : 8;
+      map.setLevel(level, { animate: true });
+
+      // 오차 원. 점 하나로 끝내면 얼마나 믿을 값인지 알 길이 없다. 오차가 작을 때는
+      // 원이 점에 묻히므로 그리지 않는다.
+      if (accuracyCircleRef.current) {
+        accuracyCircleRef.current.setMap(null);
+        accuracyCircleRef.current = null;
+      }
+      if (acc !== null && acc > 100) {
+        accuracyCircleRef.current = new kakao.maps.Circle({
+          center: loc,
+          radius: acc,
+          strokeWeight: 1,
+          strokeColor: "#06107D",
+          strokeOpacity: 0.45,
+          strokeStyle: "shortdash",
+          fillColor: "#06107D",
+          fillOpacity: 0.07,
+        });
+        accuracyCircleRef.current.setMap(map);
+      }
+
       if (userMarkerRef.current) userMarkerRef.current.setMap(null);
       const dotSvg =
         '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><circle cx="11" cy="11" r="8" fill="%23E1FC48" stroke="%23fff" stroke-width="3"/></svg>';

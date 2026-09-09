@@ -20,9 +20,40 @@ import {
   type Viewport,
 } from "@/lib/queries";
 import { useIsDesktop } from "@/lib/useIsDesktop";
-import { fetchNaverHomepage, fetchTourIntro } from "@/lib/api";
+import { fetchNaverHomepage, fetchTourIntro, haversineMeters } from "@/lib/api";
 import type { Place } from "@/lib/types";
 import { GROUP_LABEL } from "@/lib/types";
+
+/*
+ * [위치 옵션 — 기본값을 쓰면 안 되는 이유]
+ * getCurrentPosition 을 옵션 없이 부르면 브라우저 기본값이 적용된다.
+ *  - enableHighAccuracy: false → Wi-Fi·IP 기반 추정만 쓰고 GPS 를 켜지 않는다. 실내나
+ *    데스크톱에서는 수백 m ~ 수 km 오차가 난다. 이 앱은 "반경 5km"를 다루므로 그 오차가
+ *    결과를 통째로 바꾼다. 정확도가 떨어진다는 체감의 직접 원인이었다.
+ *  - timeout: 무한대 → 위치를 못 잡으면 로딩 표시가 영원히 돈다. 사용자는 앱이 멈춘 줄 안다.
+ *  - maximumAge: 0 → 버튼을 누를 때마다 매번 처음부터 다시 잡는다.
+ */
+const GEO_OPTS: PositionOptions = {
+  enableHighAccuracy: true,
+  timeout: 10000,
+  maximumAge: 30000,
+};
+
+// 지도 중심이 기준점에서 이만큼 멀어져야 "이 근처에서 찾기" 버튼을 띄운다. 예전에는 손가락으로
+// 살짝만 밀어도 버튼이 튀어나와 지도를 가렸다.
+const PAN_THRESHOLD_M = 800;
+
+// 실패 이유마다 할 수 있는 일이 다르다. 예전에는 무엇이든 "위치 권한을 확인해주세요" 였는데,
+// 실내에서 시간이 초과된 사람에게는 틀린 안내다.
+function geoErrorMessage(err: GeolocationPositionError): string {
+  if (err.code === err.PERMISSION_DENIED) {
+    return "위치 권한이 꺼져 있습니다. 주소창의 자물쇠 아이콘에서 위치 권한을 허용해 주세요.";
+  }
+  if (err.code === err.TIMEOUT) {
+    return "위치를 잡는 데 시간이 오래 걸립니다. 실내라면 창가로 옮기거나 잠시 후 다시 시도해 주세요.";
+  }
+  return "위치를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.";
+}
 
 export default function Page() {
   const isDesktop = useIsDesktop();
@@ -43,6 +74,8 @@ export default function Page() {
   const [movedCoords, setMovedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [focusTrigger, setFocusTrigger] = useState(0);
   const [locating, setLocating] = useState(false);
+  // 위치 정확도(m). 브라우저가 알려주는 값으로, 지도 줌과 오차 원을 정하는 데 쓴다.
+  const [locateAccuracy, setLocateAccuracy] = useState<number | null>(null);
   // 지도가 멈출 때마다(idle) MapCanvas가 알려주는 현재 화면 영역. 탐색 모드의 조회 범위가 된다.
   const [viewport, setViewport] = useState<Viewport | null>(null);
 
@@ -54,6 +87,16 @@ export default function Page() {
   const isNearbyMode = Boolean(nearbyCoords) && !submittedTerm;
   const isSearchMode = submittedTerm.length > 0;
   const isBrowseMode = !isNearbyMode && !isSearchMode;
+
+  /*
+   * [탐색 모드에서는 재검색 버튼을 숨긴다]
+   * 탐색 모드는 지도가 멈출 때마다(idle) 화면 영역을 스스로 다시 조회한다. 그 위에 재검색
+   * 버튼을 띄우면 두 가지가 어긋난다. 첫째, 이미 갱신된 결과를 두고 "재검색"을 권하니 안내가
+   * 거짓이다. 둘째, 버튼을 누르면 화면 전체가 아니라 중심 반경 5km 로 좁혀지므로 결과가
+   * 오히려 줄어든다. 사용자는 새로고침을 기대하고 눌렀다가 목록이 짧아지는 걸 본다.
+   * 지도가 스스로 갱신하지 않는 검색·내 주변 모드에서만 띄운다.
+   */
+  const showResearchHere = Boolean(movedCoords) && !isBrowseMode;
 
   const bizQuery = useBizSearch(region, submittedTerm);
   const parkQuery = useParkSearch(submittedTerm);
@@ -121,24 +164,47 @@ export default function Page() {
         setSubmittedTerm("");
         setLocateCoords(null);
         setMovedCoords(null);
+        setLocateAccuracy(pos.coords.accuracy ?? null);
         setNearbyCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setFocusTrigger((t) => t + 1);
         setSheetSnap("half");
       },
-      () => {
+      (err) => {
         setLocating(false);
-        alert("위치를 확인할 수 없습니다. 위치 권한을 확인해주세요.");
-      }
+        alert(geoErrorMessage(err));
+      },
+      GEO_OPTS
     );
   }
 
   function handleLocateOnly() {
     if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition((pos) => {
-      setLocateCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-      setFocusTrigger((t) => t + 1);
-    });
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocateAccuracy(pos.coords.accuracy ?? null);
+        setLocateCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setFocusTrigger((t) => t + 1);
+      },
+      // 예전에는 실패 콜백이 아예 없어서, 권한이 꺼져 있으면 버튼을 눌러도 아무 일도
+      // 일어나지 않았다. 사용자는 버튼이 고장난 줄 안다.
+      (err) => alert(geoErrorMessage(err)),
+      GEO_OPTS
+    );
   }
+
+  /*
+   * [지도를 손으로 옮겼을 때]
+   * 예전에는 dragend 마다 무조건 재검색 버튼을 띄웠다. 손가락으로 살짝만 밀어도 버튼이
+   * 튀어나와서 지도를 가렸다. 기준점에서 충분히 멀어졌을 때만 띄운다.
+   */
+  const handleUserPan = useCallback(
+    (center: { lat: number; lng: number }) => {
+      const from = nearbyCoords ?? locateCoords ?? movedCoords;
+      if (from && haversineMeters(from.lat, from.lng, center.lat, center.lng) < PAN_THRESHOLD_M) return;
+      setMovedCoords(center);
+    },
+    [nearbyCoords, locateCoords, movedCoords]
+  );
 
   // ["현 위치에서 재검색"] 사용자가 지도를 손으로 끌어서 다른 지역을 보고 있을 때, 그 화면
   // 중심 좌표를 기준으로 반경 검색을 다시 돌린다. GPS 권한이 필요 없어서 handleNearby보다
@@ -196,9 +262,10 @@ export default function Page() {
       onPrefetchPlace={onPrefetchPlace}
       focusTrigger={focusTrigger}
       focusCoords={nearbyCoords ?? locateCoords}
+      focusAccuracy={locateAccuracy}
       isDesktop={isDesktop}
       projectPins={projectPinsQuery.data ?? []}
-      onUserPan={setMovedCoords}
+      onUserPan={handleUserPan}
       onViewportChange={setViewport}
     />
   );
@@ -225,12 +292,12 @@ export default function Page() {
         />
         <div className="relative h-full flex-1">
           {mapCanvas}
-          {movedCoords && (
+          {showResearchHere && (
             <button
               onClick={handleResearchHere}
               className="tp-caption absolute left-1/2 top-4 z-[30] -translate-x-1/2 rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
             >
-              ⟳ 현 위치에서 재검색
+              ⟳ 이 근처에서 찾기
             </button>
           )}
           <button
@@ -253,12 +320,12 @@ export default function Page() {
       <div className="absolute inset-x-3 top-3 z-[20] flex flex-col gap-2">
         <TopBar onSubmit={runSearch} />
         <FilterChips onReset={handleReset} canReset={canReset} />
-        {movedCoords && (
+        {showResearchHere && (
           <button
             onClick={handleResearchHere}
             className="tp-caption mx-auto rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
           >
-            ⟳ 현 위치에서 재검색
+            ⟳ 이 근처에서 찾기
           </button>
         )}
       </div>
