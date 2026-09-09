@@ -66,10 +66,13 @@ function toMarkerImage(kakao: any, key: string, svg: string, size: PinSize) {
  * 밀집도는 더 안 보인다. 카카오 지도는 레벨 숫자가 클수록 넓게 보이므로,
  *
  *   레벨 5 이하  기본 핀(32×38) — 개별 장소를 고르는 구간
- *   레벨 6~8     작은 핀(24×30) — 여러 곳을 한눈에 훑는 구간
- *   레벨 9 이상  클러스터만     — 개별 핀은 의미가 없고 묶음 크기가 정보가 되는 구간
+ *   레벨 6~7     작은 핀(24×30) — 여러 곳을 한눈에 훑는 구간
+ *   레벨 8 이상  클러스터만     — 개별 핀은 의미가 없고 묶음 크기가 정보가 되는 구간
  *
  * 예전에는 크기가 하나였고 클러스터가 레벨 7부터 나와서, 가운데 구간이 아예 없었다.
+ * 가운데를 6~8 로 잡아 봤더니 서울 레벨 7 에서 개별 핀이 259개까지 떠서 6~7 로 줄였다.
+ * 클러스터는 짝이 없는 마커까지 묶지는 않으므로, 레벨 8 이상에서도 작은 핀이 몇 개 남는 것은
+ * 카카오 클러스터러의 정상 동작이다.
  */
 function pinSizeForLevel(level: number): PinSize {
   return level >= 6 ? PIN_COMPACT : PIN_DEFAULT;
@@ -316,8 +319,8 @@ export default function MapCanvas({
         clustererRef.current = new kakao.maps.MarkerClusterer({
           map,
           averageCenter: true,
-          // 레벨 9부터 묶는다. 7~8 은 작은 핀으로 개별 장소를 보여주는 구간이다(pinSizeForLevel).
-          minLevel: 9,
+          // 레벨 8부터 묶는다. 6~7 은 작은 핀으로 개별 장소를 보여주는 구간이다(pinSizeForLevel).
+          minLevel: 8,
           disableClickZoom: false,
           // [크기로 양을 읽히게 한다] 예전엔 스타일이 하나뿐이라 5곳짜리 묶음과 800곳짜리 묶음이
           // 똑같은 원으로 보였다. 지도에서 원의 크기는 곧 "얼마나 많은가"를 뜻하는 가장 기본적인
