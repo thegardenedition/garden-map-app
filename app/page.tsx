@@ -87,6 +87,15 @@ export default function Page() {
   const [movedCoords, setMovedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [focusTrigger, setFocusTrigger] = useState(0);
   const [locating, setLocating] = useState(false);
+  // [지도만 보기] 검색·필터가 끝난 뒤에도 상단 스택이 계속 지도 위 공간을 차지해 답답하다는
+  // 피드백을 받았다. 상단 스택 전체(배지·검색바·칩)를 잠깐 걷어내는 토글이다. 상태는 그대로
+  // 두고 화면에서만 숨기므로, 다시 누르면 검색어·필터가 그대로 남아 있다.
+  const [mapUiHidden, setMapUiHidden] = useState(false);
+  // [검색 중엔 필터 칩을 접어 둔다] 탐색(browse) 모드에서는 칩이 곧 주된 조작 수단이라 항상
+  // 펼쳐 두지만, 검색·내 주변 모드로 들어가면 이미 결과가 있는 상태라 칩을 다시 만질 일이
+  // 적다. 모드가 바뀌는 순간에만 자동으로 접고 펴며, 그 안에서는 사용자가 직접 눌러
+  // 펼치고 접을 수 있다(기능은 그대로 두고 기본 노출만 줄인다).
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   /*
    * [시트가 상단 스택을 덮지 않게]
    * full(90%)로 올리면 시트 윗선이 화면 위 81px 까지 온다. 검색바·필터 칩은 그보다 아래에
@@ -120,6 +129,12 @@ export default function Page() {
    */
   const showResearchHere = Boolean(movedCoords) && !isBrowseMode;
 
+  // 모드가 바뀌는 순간에만 칩을 자동으로 접고 편다 — 그 안에서 사용자가 직접 편 상태는
+  // 같은 모드에 머무는 동안 건드리지 않는다.
+  useEffect(() => {
+    setFiltersCollapsed(!isBrowseMode);
+  }, [isBrowseMode]);
+
   useEffect(() => {
     const measure = () => {
       const el = topStackRef.current;
@@ -129,8 +144,9 @@ export default function Page() {
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
     // mounted: 홈 링크가 마운트된 다음 순간(아래) 스택 높이가 늘어나므로, 그때 한 번 더
-    // 재보지 않으면 시트 윗선이 링크와 겹친다.
-  }, [showResearchHere, activeGroup, activeSub, mounted]);
+    // 재보지 않으면 시트 윗선이 링크와 겹친다. mapUiHidden·filtersCollapsed 도 스택 높이를
+    // 바꾸므로 같이 넣는다.
+  }, [showResearchHere, activeGroup, activeSub, mounted, mapUiHidden, filtersCollapsed]);
 
   const bizQuery = useBizSearch(region, submittedTerm);
   const parkQuery = useParkSearch(submittedTerm);
@@ -386,35 +402,68 @@ export default function Page() {
           마커를 누를 수도 없었다 — 지도는 보이는데 반응하지 않으니 고장으로 느껴진다.
           껍데기는 터치를 흘려보내고, 실제 조작이 필요한 자식만 받는다. */}
       <div ref={topStackRef} className="pointer-events-none absolute inset-x-3 top-3 z-[20] flex flex-col gap-2">
-        {/* 데스크탑 사이드바에는 브랜드 배지가 있지만 모바일 상단바에는 아예 없었다 —
-            지도를 iframe 밖에서 직접 열거나 북마크한 사람은 매거진그린으로 돌아갈 길이
-            없었다. 검색창 위에 작은 링크 하나만 얹는다(기존 플로팅 레이아웃 그대로,
-            검색 기능을 가리지 않는다).
-            target="_top": 이 앱은 magazinegreen.co.kr/garden-map 에서 iframe 으로도
-            열린다. target 없이 두면 iframe 안에서 다시 홈페이지를 여는 꼴이 되어 액자
-            속 액자처럼 보인다. _top 은 iframe 이 아닐 때는 그냥 현재 창 이동과 같다.
-            mounted 로 감싼 이유는 위 [모바일 홈 링크의 하이드레이션 문제] 참고. */}
-        {mounted && (
-          <a
-            href="https://magazinegreen.co.kr"
-            target="_top"
-            className="tp-caption pointer-events-auto inline-flex w-fit items-center gap-1.5 self-start rounded-2xl bg-[var(--color-deep-blue)]/90 px-3 py-1 text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
-          >
-            ✳ MAGAZINE GREEN
-          </a>
+        {!mapUiHidden && (
+          <>
+            {/* 데스크탑 사이드바에는 브랜드 배지가 있지만 모바일 상단바에는 아예 없었다 —
+                지도를 iframe 밖에서 직접 열거나 북마크한 사람은 매거진그린으로 돌아갈 길이
+                없었다. 검색창 위에 작은 링크 하나만 얹는다(기존 플로팅 레이아웃 그대로,
+                검색 기능을 가리지 않는다).
+                target="_top": 이 앱은 magazinegreen.co.kr/garden-map 에서 iframe 으로도
+                열린다. target 없이 두면 iframe 안에서 다시 홈페이지를 여는 꼴이 되어 액자
+                속 액자처럼 보인다. _top 은 iframe 이 아닐 때는 그냥 현재 창 이동과 같다.
+                mounted 로 감싼 이유는 위 [모바일 홈 링크의 하이드레이션 문제] 참고. */}
+            {mounted && (
+              <a
+                href="https://magazinegreen.co.kr"
+                target="_top"
+                className="tp-caption pointer-events-auto inline-flex w-fit items-center gap-1.5 self-start rounded-2xl bg-[var(--color-deep-blue)]/90 px-3 py-1 text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+              >
+                ✳ MAGAZINE GREEN
+              </a>
+            )}
+            <div className="pointer-events-auto">
+              <TopBar onSubmit={runSearch} />
+            </div>
+            {/* [검색 중엔 칩을 접어 둔다] 탐색 모드에서만 칩을 곧바로 펼쳐 보여주고, 검색·내
+                주변 모드에서는 작은 토글로 접어서 지도 볼 공간을 늘린다. 눌러서 펼치면 필터
+                기능은 그대로 다 쓸 수 있다 — 숨기는 건 기본 노출뿐이다. */}
+            <div className="pointer-events-auto flex items-start gap-2">
+              {!isBrowseMode && (
+                <button
+                  onClick={() => setFiltersCollapsed((v) => !v)}
+                  aria-expanded={!filtersCollapsed}
+                  aria-label="필터 펼치기/접기"
+                  className="tp-caption flex flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white px-3 py-2 text-[var(--color-deep-blue)] shadow-[0_2px_8px_rgba(0,0,0,0.18)]"
+                >
+                  필터{activeGroupLabel ? ` · ${activeGroupLabel}` : ""} {filtersCollapsed ? "▾" : "▴"}
+                </button>
+              )}
+              {(isBrowseMode || !filtersCollapsed) && (
+                <div className="min-w-0 flex-1">
+                  <FilterChips onReset={handleReset} canReset={canReset} />
+                </div>
+              )}
+            </div>
+          </>
         )}
-        <div className="pointer-events-auto">
-          <TopBar onSubmit={runSearch} />
-        </div>
-        <div className="pointer-events-auto">
-          <FilterChips onReset={handleReset} canReset={canReset} />
-        </div>
       </div>
+
+      {/* [지도만 보기] 검색어·필터는 그대로 두고 상단 스택만 잠깐 걷어낸다. 스택이 사라지든
+          말든 항상 같은 자리에 있어야 다시 켜는 길을 잃지 않는다 — topStackRef 바깥의
+          독립된 버튼이라 mapUiHidden 이 꺼도 이 버튼만은 계속 보인다. */}
+      <button
+        onClick={() => setMapUiHidden((v) => !v)}
+        aria-label={mapUiHidden ? "검색·필터 다시 보기" : "지도만 보기"}
+        className="pointer-events-auto absolute right-3 top-3 z-[21] flex h-10 w-10 items-center justify-center rounded-full bg-white text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+      >
+        {mapUiHidden ? "⌄" : "⌃"}
+      </button>
 
       {/* [재검색은 스택 밖에 띄운다] 예전에는 이 버튼이 상단 스택 안에 있어서, 뜰 때마다 스택이
           한 줄 길어지고 그만큼 지도가 좁아졌다. 홈 링크까지 들어와 스택이 더 길어졌으니 더욱
-          그렇다. 지도 위에 겹쳐 띄우면 스택 높이가 변하지 않는다. 데스크톱도 같은 방식이다. */}
-      {showResearchHere && (
+          그렇다. 지도 위에 겹쳐 띄우면 스택 높이가 변하지 않는다. 데스크톱도 같은 방식이다.
+          지도만 보기 중에는 걷어낸 UI를 다시 지도 위에 끌어오는 셈이라 함께 숨긴다. */}
+      {showResearchHere && !mapUiHidden && (
         <button
           onClick={handleResearchHere}
           className="tp-caption absolute left-1/2 z-[25] -translate-x-1/2 rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
@@ -424,48 +473,58 @@ export default function Page() {
         </button>
       )}
 
+      {/* [검색 종료 버튼을 시트 밖으로] 예전엔 바텀시트 안 상태 줄에 있었다. 시트는 peek이어도
+          화면의 30%를 차지하므로, 검색만 그만두고 싶을 때도 시트를 먼저 봐야 눈에 들어왔다.
+          상단 스택 바로 아래(재검색 버튼과 같은 자리)로 옮겨 지도를 보는 시선 안에 둔다. */}
+      {!isBrowseMode && !mapUiHidden && (
+        <button
+          onClick={exitToBrowse}
+          className="tp-caption absolute right-3 z-[25] rounded-full bg-white px-3 py-2 text-[11px] text-[var(--color-deep-blue)]/80 shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+          style={{ top: sheetMinTop || 160 }}
+        >
+          지도 탐색으로 ✕
+        </button>
+      )}
+
       <BottomSheet
         snap={selectedPlaceId ? "peek" : sheetSnap}
         onSnapChange={setSheetSnap}
         dragHandleLabel="결과 목록 시트"
         minTopPx={sheetMinTop}
         floatingActions={
-          <>
+          // [두 버튼을 한 덩어리로] 예전엔 원형 버튼 두 개가 각자 그림자를 지고 따로 떠 있어
+          // 지도 위에 얹힌 장치가 하나 더 있는 것처럼 보였다. 기능은 그대로 두고(따로따로
+          // 누른다) 테두리 하나 안에 묶어 그림자 하나·경계 하나로 줄인다.
+          <div className="pointer-events-auto flex flex-col overflow-hidden rounded-[26px] shadow-[0_4px_14px_rgba(0,0,0,0.28)]">
             <button
               onClick={handleNearby}
               disabled={locating}
               aria-label="내 주변에서 찾기"
-              className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full border-2 border-[var(--color-deep-blue)] bg-white text-lg text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)] disabled:opacity-50"
+              className="flex h-12 w-12 items-center justify-center bg-white text-lg text-[var(--color-deep-blue)] disabled:opacity-50"
             >
               📍
             </button>
             <button
               onClick={handleLocateOnly}
               aria-label="현재 위치"
-              className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+              className="flex h-12 w-12 items-center justify-center border-t border-white/15 bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)]"
             >
               ◎
             </button>
-          </>
+          </div>
         }
       >
         {/* [두 줄을 한 줄로] 손잡이 터치 영역을 44px 로 키운 만큼 목록이 줄어드는데, 상태와
-            건수는 원래 따로 있을 이유가 없었다. 합쳐서 그 높이를 되찾는다. */}
-        <div className="flex flex-shrink-0 items-center justify-between gap-2 px-[18px] pb-1.5">
+            건수는 원래 따로 있을 이유가 없었다. 합쳐서 그 높이를 되찾는다.
+            "지도 탐색으로 ✕"는 위쪽 지도 위 버튼으로 옮겨서 여기서는 뺐다 — 검색만 그만두고
+            싶을 때 시트를 열어보지 않아도 바로 눈에 들어오는 자리가 낫다고 판단했다. */}
+        <div className="flex flex-shrink-0 items-center gap-2 px-[18px] pb-1.5">
           <span className="tp-caption min-w-0 truncate text-[var(--color-deep-blue)]">
             {statusLabel}
             <span className="ml-1.5 text-[11px] font-normal text-[#8A90B4]">
               {isLoading ? "검색 중..." : hasSearched ? `${places.length}곳${activeGroupLabel ? ` · ${activeGroupLabel}` : ""}` : ""}
             </span>
           </span>
-          {!isBrowseMode && (
-            <button
-              onClick={exitToBrowse}
-              className="tp-caption flex-shrink-0 rounded-full border border-[var(--color-deep-blue)]/25 px-2.5 py-1 text-[11px] text-[var(--color-deep-blue)]/75"
-            >
-              지도 탐색으로 ✕
-            </button>
-          )}
         </div>
         <PlaceList places={places} hasSearched={hasSearched && !isLoading} onSelect={handleSelect} />
       </BottomSheet>
