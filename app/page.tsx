@@ -85,7 +85,24 @@ export default function Page() {
   const [nearbyCoords, setNearbyCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locateCoords, setLocateCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [movedCoords, setMovedCoords] = useState<{ lat: number; lng: number } | null>(null);
+  // [지도에서 보기 딥링크] project.magazinegreen.co.kr 상세 페이지의 "지도에서 보기"가
+  // ?lat=..&lng=.. 로 이 앱을 연다. useSearchParams()는 Next.js가 정적 렌더링 시 이
+  // 페이지 전체를 Suspense로 감싸길 요구하는데, 마운트 시 한 번만 읽으면 되는 이
+  // 용도에는 window.location.search를 직접 읽는 쪽이 구조를 안 건드리고 더 간단하다.
+  const [urlFocusCoords, setUrlFocusCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [focusTrigger, setFocusTrigger] = useState(0);
+
+  // 값이 없거나 숫자로 못 읽으면 기존 기본 동작(전국 뷰) 그대로다.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const lat = parseFloat(params.get("lat") ?? "");
+    const lng = parseFloat(params.get("lng") ?? "");
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      setUrlFocusCoords({ lat, lng });
+      setFocusTrigger((t) => t + 1);
+    }
+  }, []);
+
   const [locating, setLocating] = useState(false);
   // [지도만 보기] 검색·필터가 끝난 뒤에도 상단 스택이 계속 지도 위 공간을 차지해 답답하다는
   // 피드백을 받았다. 상단 스택 전체(배지·검색바·칩)를 잠깐 걷어내는 토글이다. 상태는 그대로
@@ -339,7 +356,7 @@ export default function Page() {
       onSelectPlace={selectPlace}
       onPrefetchPlace={onPrefetchPlace}
       focusTrigger={focusTrigger}
-      focusCoords={nearbyCoords ?? locateCoords}
+      focusCoords={nearbyCoords ?? locateCoords ?? urlFocusCoords}
       focusAccuracy={locateAccuracy}
       focusRadius={isNearbyMode ? (nearbyQuery.data?.radiusM ?? null) : null}
       isDesktop={isDesktop}
