@@ -215,6 +215,70 @@ async function fetchBizV2(query: BizV2Query): Promise<Place[]> {
     }));
 }
 
+interface CustomPinRow {
+  id: string;
+  name: string;
+  group_id: GroupId;
+  sub_id: SubId | null;
+  lat: number;
+  lng: number;
+  address: string | null;
+  photo_url: string | null;
+  note: string | null;
+  promoted_to_slug: string | null;
+}
+
+// [분류 폴백] "가든 핀 등록 도구"는 세부 분류를 선택 안 해도 등록되게 해 뒀다(입력을 최대한
+// 손쉽게 하는 게 그 도구의 핵심). 하지만 Place.categoryDepth2는 필수값이라 필터 칩 로직이
+// 깨지지 않도록 그룹별로 "미분류"에 가장 가까운 소분류를 대신 채운다.
+const DEFAULT_SUB_FOR_GROUP: Record<GroupId, SubId> = {
+  company: "general",
+  material: "supply",
+  park: "garden",
+};
+
+function mapCustomPinRow(r: CustomPinRow): Place {
+  return {
+    placeId: `custom-${r.id}`,
+    categoryDepth1: r.group_id,
+    categoryDepth2: r.sub_id ?? DEFAULT_SUB_FOR_GROUP[r.group_id],
+    placeName: r.name,
+    address: r.address || "",
+    contact: null,
+    coordinates: [r.lng, r.lat],
+    homepage: null,
+    homepageDirect: null,
+    source: "custom",
+    distanceM: null,
+    photoUrl: r.photo_url,
+    note: r.note,
+  };
+}
+
+// [손쉽게 등록한 핀] "가든 핀 등록 도구"(app/admin)로 넣은 장소. 대장/카카오/네이버처럼
+// 서버가 하나 더 늘어난 것뿐이라, 아래 탐색·검색 함수들이 기존 그룹(회사/자재/공원) 결과에
+// 그대로 섞어 넣는다 — 별도 레이어가 아니라 지도에서 다른 장소와 구분 없이 나온다.
+// 이 소스가 죽어도(워커 배포 실패 등) 나머지 지도 데이터는 그대로 보여야 하므로 실패 시 빈 배열.
+export async function fetchCustomPins(bbox?: Bbox, group?: GroupId | null): Promise<Place[]> {
+  const params = new URLSearchParams();
+  if (bbox) params.set("bbox", bbox.join(","));
+  if (group) params.set("group", group);
+  const qs = params.toString();
+  try {
+    const res = await fetchWithRetry(`${WORKER_BASE}/custom-pins${qs ? `?${qs}` : ""}`);
+    const data = await res.json();
+    const rows: CustomPinRow[] = data?.results ?? [];
+    return rows.map(mapCustomPinRow);
+  } catch (err) {
+    console.error("[fetchCustomPins] 조회 실패:", err);
+    return [];
+  }
+}
+
+function filterCustomBySub(list: Place[], sub: SubId | null): Place[] {
+  return sub ? list.filter((p) => p.categoryDepth2 === sub) : list;
+}
+
 // [카테고리 탐색] 검색어 없이 카테고리만으로 목록을 여는 경로.
 // 예전에는 카테고리 칩이 "이미 검색된 결과를 사후 필터링"하는 역할뿐이라, 검색어를 넣지 않으면
 // 칩을 눌러도 화면이 비어 있었다. 조경회사/자재는 우리 대장에 다 있으므로 검색어 없이도 바로 연다.
@@ -225,12 +289,18 @@ export async function browseByCategory(
   group: GroupId | null,
   sub: SubId | null
 ): Promise<Place[]> {
+  // searchParks가 이제 fetchCustomPins(park)까지 합쳐서 돌려주므로 여기서 따로 합칠 게 없다.
   if (group === "park") return searchParks("", true);
   const groups: GroupId[] = group ? [group] : ["company", "material"];
-  const lists = await Promise.all(
-    groups.map((g) => fetchBizV2({ region, group: g, sub: sub ?? undefined, limit: 500 }))
+  const [lists, customAll] = await Promise.all([
+    Promise.all(groups.map((g) => fetchBizV2({ region, group: g, sub: sub ?? undefined, limit: 500 }))),
+    fetchCustomPins(),
+  ]);
+  const custom = filterCustomBySub(
+    customAll.filter((p) => groups.includes(p.categoryDepth1)),
+    sub
   );
-  return lists.flat().filter((p) => !isExcludedName(p.placeName));
+  return [...custom, ...lists.flat().filter((p) => !isExcludedName(p.placeName))];
 }
 
 // [뷰포트 조회] 지도에 실제로 보이는 영역만 가져온다.
@@ -253,15 +323,20 @@ export async function browseByBbox(bbox: Bbox, group: GroupId | null, sub: SubId
     p.coordinates[1] <= maxLat;
 
   if (group === "park") {
-    const all = await fetchAllParks();
-    return all.filter(inBox);
+    const [all, custom] = await Promise.all([fetchAllParks(), fetchCustomPins(bbox, "park")]);
+    return mergeDedup(filterCustomBySub(custom, sub), all.filter(inBox));
   }
 
   const groups: GroupId[] = group ? [group] : ["company", "material"];
-  const lists = await Promise.all(
-    groups.map((g) => fetchBizV2({ bbox, group: g, sub: sub ?? undefined, limit: 500 }))
+  const [lists, customAll] = await Promise.all([
+    Promise.all(groups.map((g) => fetchBizV2({ bbox, group: g, sub: sub ?? undefined, limit: 500 }))),
+    fetchCustomPins(bbox),
+  ]);
+  const custom = filterCustomBySub(
+    customAll.filter((p) => groups.includes(p.categoryDepth1)),
+    sub
   );
-  return mergeDedup(lists.flat().filter((p) => !isExcludedName(p.placeName)));
+  return mergeDedup(custom, lists.flat().filter((p) => !isExcludedName(p.placeName)));
 }
 
 const PARK_SUB_CODES: Record<string, string[]> = {
@@ -526,23 +601,31 @@ export async function searchBizPlaces(region: Region, keyword: string): Promise<
   const v2CompanyTask = fetchBizV2({ region, group: "company", q: serverQ });
   const v2MaterialTask = fetchBizV2({ region, group: "material", q: serverQ });
   const naverTask = fetchNaverIndependent(region, keyword);
+  // [간단 핀] 지역 개념이 없어 전국을 다 받아 이름으로만 거른다 — 등록 건수 자체가
+  // 적을 것으로 보여(수백 건 규모) 지금은 이 비용이 무시할 만하다.
+  const customTask = fetchCustomPins();
 
   // [장애 격리] 예전엔 Promise.all을 써서, 4개 소스(카카오/자체DB-회사/자체DB-자재/네이버) 중
   // 단 하나만 실패해도(예: 자체 DB API가 502를 내는 경우) 전체 검색이 통째로 실패해 "0곳 표시
   // 중"으로 보였다 — 나머지 소스가 정상 응답했어도 전부 버려졌다. 실제로 이런 장애가 발생한 걸
   // 확인했다(bizdb-v2가 502를 내는 상태). Promise.allSettled로 바꿔서, 죽은 소스는 빈 배열로
   // 취급하고 살아있는 소스의 결과는 그대로 보여준다.
-  const [kakaoResult, v2CompanyResult, v2MaterialResult, naverResult] = await Promise.allSettled([
-    kakaoTask, v2CompanyTask, v2MaterialTask, naverTask,
+  const [kakaoResult, v2CompanyResult, v2MaterialResult, naverResult, customResult] = await Promise.allSettled([
+    kakaoTask, v2CompanyTask, v2MaterialTask, naverTask, customTask,
   ]);
   const kakao = kakaoResult.status === "fulfilled" ? kakaoResult.value : [];
   const v2Company = v2CompanyResult.status === "fulfilled" ? v2CompanyResult.value : [];
   const v2Material = v2MaterialResult.status === "fulfilled" ? v2MaterialResult.value : [];
   const naver = naverResult.status === "fulfilled" ? naverResult.value : [];
+  const custom = customResult.status === "fulfilled" ? customResult.value : [];
   if (kakaoResult.status === "rejected") console.error("[searchBizPlaces] 카카오 검색 실패:", kakaoResult.reason);
   if (v2CompanyResult.status === "rejected") console.error("[searchBizPlaces] 자체 DB(조경회사) 조회 실패:", v2CompanyResult.reason);
   if (v2MaterialResult.status === "rejected") console.error("[searchBizPlaces] 자체 DB(조경수/자재) 조회 실패:", v2MaterialResult.reason);
   if (naverResult.status === "rejected") console.error("[searchBizPlaces] 네이버 검색 실패:", naverResult.reason);
+  if (customResult.status === "rejected") console.error("[searchBizPlaces] 간단 핀 조회 실패:", customResult.reason);
+  const customMatched = custom.filter((p) => p.placeName.includes(keyword));
+  const customCompany = customMatched.filter((p) => p.categoryDepth1 === "company");
+  const customMaterial = customMatched.filter((p) => p.categoryDepth1 === "material");
 
   // [조경종합 버킷 안전장치] 예전 대량 수집 당시 오분류된 데이터가 이 버킷에 몰려 있을 위험이 커서,
   // 검색어가 "조경" 계열 카테고리성 단어가 아니면 이 버킷은 DB 결과에서 아예 보여주지 않는다.
@@ -575,12 +658,16 @@ export async function searchBizPlaces(region: Region, keyword: string): Promise<
   const kakaoMaterial = kakao.filter((p) => p.categoryDepth1 === "material");
 
   // [최종 안전망] 소스를 막론하고 병원/주유소/아파트 등 명백히 무관한 업종은 한 번 더 걸러낸다.
-  const company = sortByRelevance(mergeDedup(v2CompanyFiltered, kakaoCompany, naverCompany), keyword).filter(
-    (p) => !isExcludedName(p.placeName)
-  );
-  const material = sortByRelevance(mergeDedup(v2MaterialFiltered, kakaoMaterial, naverMaterial), keyword).filter(
-    (p) => !isExcludedName(p.placeName)
-  );
+  // 간단 핀(customCompany/customMaterial)은 사람이 직접 입력한 값이라 이 필터를 이미 신뢰하고
+  // mergeDedup 맨 앞에 둔다 — 같은 이름이 대장/카카오에도 있으면 그쪽 빈 필드를 채워주는 쪽이 된다.
+  const company = sortByRelevance(
+    mergeDedup(customCompany, v2CompanyFiltered, kakaoCompany, naverCompany),
+    keyword
+  ).filter((p) => !isExcludedName(p.placeName));
+  const material = sortByRelevance(
+    mergeDedup(customMaterial, v2MaterialFiltered, kakaoMaterial, naverMaterial),
+    keyword
+  ).filter((p) => !isExcludedName(p.placeName));
 
   return [...company, ...material];
 }
@@ -591,10 +678,11 @@ export async function searchBizPlaces(region: Region, keyword: string): Promise<
 // browseAll=true 면 검색어 없이 공원/수목원 카테고리 전체를 연다(카테고리 칩만 눌렀을 때).
 export async function searchParks(keyword: string, browseAll = false): Promise<Place[]> {
   if (!keyword && !browseAll) return [];
-  const all = await fetchAllParks();
-  if (!keyword) return all;
+  const [all, custom] = await Promise.all([fetchAllParks(), fetchCustomPins(undefined, "park")]);
+  const combined = [...custom, ...all];
+  if (!keyword) return combined;
   return sortByRelevance(
-    all.filter((p) => p.placeName.includes(keyword)),
+    combined.filter((p) => p.placeName.includes(keyword)),
     keyword
   );
 }
@@ -685,14 +773,24 @@ export async function searchNearby(
   ).then((places) => places.filter((p) => !isExcludedName(p.placeName)));
 
   const parkTask = group && group !== "park" ? Promise.resolve([]) : fetchNearbyParks(lat, lng, radiusM);
+  // group 그대로 넘기면 워커가 이미 그 그룹만 걸러 준다(null이면 전체 — parkTask와 같은 규칙).
+  const customTask = fetchCustomPins(undefined, group).then((places) =>
+    places
+      .map((p) => ({ ...p, distanceM: haversineMeters(lat, lng, p.coordinates[1], p.coordinates[0]) }))
+      .filter((p) => p.distanceM! <= radiusM)
+  );
 
-  const [bizResult, parkResult] = await Promise.allSettled([bizTask, parkTask]);
+  const [bizResult, parkResult, customResult] = await Promise.allSettled([bizTask, parkTask, customTask]);
   const bizPlaces = bizResult.status === "fulfilled" ? bizResult.value : [];
   const parkPlaces = parkResult.status === "fulfilled" ? parkResult.value : [];
+  const customPlaces = customResult.status === "fulfilled" ? customResult.value : [];
   if (bizResult.status === "rejected") console.error("[searchNearby] 자체 DB 반경 조회 실패:", bizResult.reason);
   if (parkResult.status === "rejected") console.error("[searchNearby] 공원 반경 조회 실패:", parkResult.reason);
+  if (customResult.status === "rejected") console.error("[searchNearby] 간단 핀 반경 조회 실패:", customResult.reason);
 
-  return [...bizPlaces, ...parkPlaces].sort((a, b) => (a.distanceM ?? Infinity) - (b.distanceM ?? Infinity));
+  return [...bizPlaces, ...parkPlaces, ...customPlaces].sort(
+    (a, b) => (a.distanceM ?? Infinity) - (b.distanceM ?? Infinity)
+  );
 }
 
 interface TourIntro {

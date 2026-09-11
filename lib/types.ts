@@ -33,7 +33,9 @@ export interface Place {
   homepageDirect: string | null; // 네이버 검색으로 이미 확보된 링크면 추가 조회 없이 바로 사용
   // registry = 한국수목원정원관리원 대장(수목원 70 + 정원 80). 외부 조회 없이 자체 필드로
   // 상세를 채우므로 카카오/투어API 후속 요청을 걸지 않는다.
-  source: "kakao" | "tourapi" | "registry";
+  // custom = "가든 핀 등록 도구"(app/admin)로 사람이 직접 넣은 장소. 대장·카카오·네이버처럼
+  // 외부 조회로 보완할 연락처/홈페이지가 없으므로 후속 요청을 걸지 않는다(note가 유일한 설명).
+  source: "kakao" | "tourapi" | "registry" | "custom";
   distanceM: number | null; // 내 주변 찾기(반경 검색)일 때만 채워짐
   usetime?: string | null;
   restdate?: string | null;
@@ -42,6 +44,9 @@ export interface Place {
   fees?: { adult?: number; youth?: number; child?: number; disabled?: number };
   petAllowed?: boolean;
   species?: string[]; // 봄·여름·가을·겨울 대표 수종
+  // 아래 둘은 custom(가든 핀 등록 도구)에만 있는 값이다.
+  photoUrl?: string | null;
+  note?: string | null;
 }
 
 // 목록과 지도 툴팁이 같은 규칙으로 거리를 쓰도록 여기 둔다. 화면 문구용 상수(GROUP_LABEL 등)가
