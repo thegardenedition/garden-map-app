@@ -293,7 +293,9 @@ export default function Page() {
           queryFn: () => fetchTourIntro(place.placeId.replace("tour-", "")),
           staleTime: 5 * 60_000,
         });
-      } else if (!place.homepageDirect) {
+        // [간단 핀] 사람이 직접 등록한 장소라 네이버에서 홈페이지를 찾아 줄 대상이 아니다.
+        // 이 가지를 빼면 커스텀 핀을 열 때마다 의미 없는 네이버 검색 쿼터가 소모된다.
+      } else if (place.source !== "custom" && !place.homepageDirect) {
         queryClient.prefetchQuery({
           queryKey: ["naverHomepage", place.placeId],
           queryFn: () => fetchNaverHomepage(place.placeName, region),
