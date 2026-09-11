@@ -122,6 +122,27 @@ export default function DetailContent({ place, region }: { place: Place; region:
           <InfoRow icon="📅" label="쉬는날" value={tourInfo.data?.restdate ?? null} muted={!tourInfo.data?.restdate} />
           <InfoRow icon="🅿" label="주차" value={tourInfo.data?.parking ?? null} muted={!tourInfo.data?.parking} />
         </div>
+      ) : place.source === "custom" ? (
+        /* [간단 핀] "가든 핀 등록 도구"로 사람이 직접 넣은 장소라 연락처/홈페이지를 외부에서
+           보완할 방법이 없다 — 등록할 때 남긴 메모와 사진이 정보의 전부다. */
+        <div>
+          {place.photoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element -- 관리자가 붙여넣는 임의의
+            // 외부 URL이라 next/image의 도메인 화이트리스트에 걸린다. 원본을 그대로 보여줄
+            // 뿐이라 최적화가 필요 없다.
+            <img
+              src={place.photoUrl}
+              alt={place.placeName}
+              loading="lazy"
+              className="mb-2.5 h-40 w-full rounded-xl object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          )}
+          <InfoRow icon="📝" label="메모" value={place.note ?? null} muted={!place.note} />
+          <InfoRow icon="📍" label="출처" value="가든 핀 등록 도구" />
+        </div>
       ) : (
         <div>
           <InfoRow icon="☎" label="전화" value={place.contact} muted={!place.contact} />
