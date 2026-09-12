@@ -65,8 +65,8 @@ function toMarkerImage(kakao: any, key: string, svg: string, size: PinSize) {
  * 바뀐다. 그런데 크기가 하나뿐이면 넓게 볼 때 핀이 서로 겹쳐 덩어리로 뭉개지고, 정작
  * 밀집도는 더 안 보인다. 카카오 지도는 레벨 숫자가 클수록 넓게 보이므로,
  *
- *   레벨 5 이하  기본 핀(32×38) — 개별 장소를 고르는 구간
- *   레벨 6~7     작은 핀(24×30) — 여러 곳을 한눈에 훑는 구간
+ *   레벨 5 이하  기본 핀(36×43) — 개별 장소를 고르는 구간
+ *   레벨 6~7     작은 핀(28×34) — 여러 곳을 한눈에 훑는 구간
  *   레벨 8 이상  클러스터만     — 개별 핀은 의미가 없고 묶음 크기가 정보가 되는 구간
  *
  * 예전에는 크기가 하나였고 클러스터가 레벨 7부터 나와서, 가운데 구간이 아예 없었다.
@@ -172,6 +172,15 @@ export default function MapCanvas({
   const accuracyCircleRef = useRef<any>(null);
   const searchCircleRef = useRef<any>(null);
   const hoverOverlayRef = useRef<any>(null);
+  // [호버 툴팁 깜빡임 방지] 마커 위에 뜬 툴팁(CustomOverlay)이 실제 화면에서 마커의 픽셀
+  // 영역과 살짝 겹치면, 마우스가 전혀 움직이지 않아도 브라우저가 "지금 가장 위에 있는
+  // 요소"를 다시 계산하면서 마커에 mouseout이 뜨고 → 툴팁이 사라지고 → 마커가 다시
+  // 최상단이 되어 mouseover가 다시 뜨는 식으로 끝없이 되풀이될 수 있다(핀 크기가 커질수록
+  // 겹칠 여지도 커진다). mouseout에서 곧바로 지우지 않고 짧게 미뤘다가, 그 사이 같은 핀에
+  // mouseover가 다시 오면(바로 이 되풀이 상황) 취소해서 화면을 그대로 둔다 — 진짜로 다른
+  // 곳으로 마우스가 떠난 경우에만 실제로 사라진다.
+  const hoverHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoveredPlaceIdRef = useRef<string | null>(null);
   const scriptLoadedRef = useRef(false);
   const isDesktopRef = useRef(isDesktop);
   const zoomControlRef = useRef<any>(null);
@@ -411,6 +420,7 @@ export default function MapCanvas({
       if (userMarkerRef.current) userMarkerRef.current.setMap(null);
       if (accuracyCircleRef.current) accuracyCircleRef.current.setMap(null);
       if (searchCircleRef.current) searchCircleRef.current.setMap(null);
+      if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
       if (hoverOverlayRef.current) hoverOverlayRef.current.setMap(null);
       projectMarkersRef.current.forEach((m) => m.setMap(null));
       projectMarkersRef.current = [];
@@ -435,10 +445,15 @@ export default function MapCanvas({
     const currentPinSize = pinSizeForLevel(map.getLevel());
     pinWidthRef.current = currentPinSize.width;
     // 호버 중이던 핀이 이번 렌더에서 사라질 수 있다. 그러면 mouseout 이 오지 않아 툴팁만 남는다.
+    if (hoverHideTimerRef.current) {
+      clearTimeout(hoverHideTimerRef.current);
+      hoverHideTimerRef.current = null;
+    }
     if (hoverOverlayRef.current) {
       hoverOverlayRef.current.setMap(null);
       hoverOverlayRef.current = null;
     }
+    hoveredPlaceIdRef.current = null;
 
     const newMarkers: any[] = [];
     for (const place of places) {
@@ -452,6 +467,14 @@ export default function MapCanvas({
       });
       if (isDesktop) {
         kakao.maps.event.addListener(marker, "mouseover", () => {
+          // 방금 전 mouseout으로 예약해 둔 제거를 취소한다 — 같은 핀에 대한 되풀이(깜빡임)라면
+          // 여기서 멈추고, 아래로 내려가지 않는다(이미 같은 핀 툴팁이 떠 있으므로 다시 만들
+          // 필요가 없다).
+          if (hoverHideTimerRef.current) {
+            clearTimeout(hoverHideTimerRef.current);
+            hoverHideTimerRef.current = null;
+          }
+          if (hoveredPlaceIdRef.current === place.placeId && hoverOverlayRef.current) return;
           if (hoverOverlayRef.current) hoverOverlayRef.current.setMap(null);
           hoverOverlayRef.current = new kakao.maps.CustomOverlay({
             position: marker.getPosition(),
@@ -460,12 +483,21 @@ export default function MapCanvas({
             zIndex: 100,
           });
           hoverOverlayRef.current.setMap(map);
+          hoveredPlaceIdRef.current = place.placeId;
         });
         kakao.maps.event.addListener(marker, "mouseout", () => {
-          if (hoverOverlayRef.current) {
-            hoverOverlayRef.current.setMap(null);
-            hoverOverlayRef.current = null;
-          }
+          // 곧바로 지우지 않고 짧게 미룬다 — 이 사이 같은 핀에 mouseover가 다시 오면(위
+          // 핸들러가) 이 타이머를 취소해서 화면이 흔들리지 않는다. 진짜로 마우스가 다른
+          // 곳으로 떠난 경우에만 아래가 실행되어 툴팁이 사라진다.
+          if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
+          hoverHideTimerRef.current = setTimeout(() => {
+            if (hoverOverlayRef.current) {
+              hoverOverlayRef.current.setMap(null);
+              hoverOverlayRef.current = null;
+            }
+            hoveredPlaceIdRef.current = null;
+            hoverHideTimerRef.current = null;
+          }, 80);
         });
       }
       markersRef.current[place.placeId] = marker;
