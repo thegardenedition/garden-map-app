@@ -186,6 +186,12 @@ export default function MapCanvas({
   const zoomControlRef = useRef<any>(null);
   const onUserPanRef = useRef(onUserPan);
   const onViewportChangeRef = useRef(onViewportChange);
+  // [마커 재사용] 아래 마커 렌더링 effect가 이제 마커를 매번 다시 만들지 않고 재사용하므로,
+  // 클릭/호버 핸들러를 마커 생성 시점의 onSelectPlace/onPrefetchPlace로 그대로 캡처해 두면
+  // 이 두 props가 나중에 바뀌어도(예: region 변경으로 onPrefetchPlace가 새로 만들어짐) 오래
+  // 살아남은 마커는 계속 예전 함수를 부르게 된다. ref로 감싸 항상 최신 함수를 부르게 한다.
+  const onSelectPlaceRef = useRef(onSelectPlace);
+  const onPrefetchPlaceRef = useRef(onPrefetchPlace);
   const hintRef = useRef<HTMLDivElement | null>(null);
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -200,6 +206,14 @@ export default function MapCanvas({
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange;
   }, [onViewportChange]);
+
+  useEffect(() => {
+    onSelectPlaceRef.current = onSelectPlace;
+  }, [onSelectPlace]);
+
+  useEffect(() => {
+    onPrefetchPlaceRef.current = onPrefetchPlace;
+  }, [onPrefetchPlace]);
 
   // [제스처 충돌 방지] 데스크탑에서만 Kakao 기본 줌을 끄고, Ctrl+스크롤일 때만 우리가 직접 확대/축소한다.
   // 맨 스크롤(Ctrl 없이)은 막아서 페이지가 튀지 않게 하고, 대신 안내 힌트를 잠깐 보여준다.
@@ -430,40 +444,76 @@ export default function MapCanvas({
     };
   }, []);
 
-  // 마커 렌더링 — places가 바뀔 때만 재구성
+  /*
+   * [마커 렌더링 — 사라진/새로 생긴 placeId만 반영]
+   * 예전에는 places가 바뀔 때마다(모바일에서 손으로 지도를 옮길 때마다 idle → bbox
+   * 재조회 → places 갱신) 화면에 이미 떠 있던 마커까지 전부 지우고 수백 개를 처음부터
+   * 다시 만들었다. 화면이 겹치는 팬(pan)에서도 매번 전체를 다시 만드는 셈이라, 모바일
+   * 기기에서는 판을 뗄 때마다 메인 스레드가 수백 ms씩 멎어 "지도 이동 반응이 느리다"는
+   * 체감으로 이어졌다. 이제 이번 렌더에서 사라진 placeId만 지우고, 새로 나타난
+   * placeId만 새로 만든다 — 인접한 영역으로 이동할수록 겹치는 장소가 많아 다시 만들
+   * 마커는 몇 개 안 된다.
+   *
+   * 마커를 재사용하므로 클릭/호버 핸들러 안에서 place 객체를 직접 캡처하지 않는다.
+   * 캡처해 두면 나중에 같은 장소의 정보가 갱신돼도(예: mergeDedup의 연락처 채움) 이
+   * 마커는 만들어질 때의 옛 데이터로 계속 응답한다. 대신 placeId(안 변하는 값)만
+   * 캡처하고, 이벤트가 실제로 발생한 시점에 markerPlacesRef에서 최신 데이터를 찾는다.
+   * onSelectPlace/onPrefetchPlace도 같은 이유로 ref를 통해서만 부른다(위 두 useEffect).
+   */
   useEffect(() => {
     const kakao = window.kakao;
     const map = mapRef.current;
     const clusterer = clustererRef.current;
     if (!kakao?.maps || !map || !clusterer) return;
 
-    clusterer.clear();
-    Object.values(markersRef.current).forEach((m) => m.setMap(null));
-    markersRef.current = {};
-    markerPlacesRef.current = {};
     // 지금 보고 있는 축척에 맞는 크기로 만든다. 줌이 바뀌면 위 zoom_changed 가 갈아 끼운다.
     const currentPinSize = pinSizeForLevel(map.getLevel());
     pinWidthRef.current = currentPinSize.width;
-    // 호버 중이던 핀이 이번 렌더에서 사라질 수 있다. 그러면 mouseout 이 오지 않아 툴팁만 남는다.
-    if (hoverHideTimerRef.current) {
-      clearTimeout(hoverHideTimerRef.current);
-      hoverHideTimerRef.current = null;
-    }
-    if (hoverOverlayRef.current) {
-      hoverOverlayRef.current.setMap(null);
-      hoverOverlayRef.current = null;
-    }
-    hoveredPlaceIdRef.current = null;
 
-    const newMarkers: any[] = [];
+    const nextIds = new Set(places.map((p) => p.placeId));
+
+    // 화면에서 사라진 장소의 마커만 지운다.
+    const toRemove: any[] = [];
+    for (const [id, marker] of Object.entries(markersRef.current)) {
+      if (nextIds.has(id)) continue;
+      toRemove.push(marker);
+      delete markersRef.current[id];
+      delete markerPlacesRef.current[id];
+      // 지워지는 마커가 마침 호버 중이었다면(마우스가 그대로 있는데 데이터에서만 사라진
+      // 경우) 툴팁이 고아로 남지 않도록 같이 정리한다.
+      if (hoveredPlaceIdRef.current === id) {
+        if (hoverHideTimerRef.current) {
+          clearTimeout(hoverHideTimerRef.current);
+          hoverHideTimerRef.current = null;
+        }
+        if (hoverOverlayRef.current) {
+          hoverOverlayRef.current.setMap(null);
+          hoverOverlayRef.current = null;
+        }
+        hoveredPlaceIdRef.current = null;
+      }
+    }
+    if (toRemove.length) {
+      clusterer.removeMarkers(toRemove);
+      toRemove.forEach((m) => m.setMap(null));
+    }
+
+    // 이미 떠 있는 장소는 마커를 새로 만들지 않되, 참조 데이터는 최신으로 갱신한다.
+    const toAdd: any[] = [];
     for (const place of places) {
+      markerPlacesRef.current[place.placeId] = place;
+      if (markersRef.current[place.placeId]) continue;
+
       const [lng, lat] = place.coordinates;
       if (!lat || !lng) continue;
+      const placeId = place.placeId;
       const image = placeMarkerImage(kakao, place, false, currentPinSize);
       const marker = new kakao.maps.Marker({ position: new kakao.maps.LatLng(lat, lng), image });
       kakao.maps.event.addListener(marker, "click", () => {
-        onSelectPlace(place.placeId);
-        onPrefetchPlace?.(place);
+        const current = markerPlacesRef.current[placeId];
+        if (!current) return;
+        onSelectPlaceRef.current(current.placeId);
+        onPrefetchPlaceRef.current?.(current);
       });
       if (isDesktop) {
         kakao.maps.event.addListener(marker, "mouseover", () => {
@@ -474,16 +524,18 @@ export default function MapCanvas({
             clearTimeout(hoverHideTimerRef.current);
             hoverHideTimerRef.current = null;
           }
-          if (hoveredPlaceIdRef.current === place.placeId && hoverOverlayRef.current) return;
+          if (hoveredPlaceIdRef.current === placeId && hoverOverlayRef.current) return;
+          const current = markerPlacesRef.current[placeId];
+          if (!current) return;
           if (hoverOverlayRef.current) hoverOverlayRef.current.setMap(null);
           hoverOverlayRef.current = new kakao.maps.CustomOverlay({
             position: marker.getPosition(),
-            content: hoverTooltipHtml(place),
+            content: hoverTooltipHtml(current),
             yAnchor: 1,
             zIndex: 100,
           });
           hoverOverlayRef.current.setMap(map);
-          hoveredPlaceIdRef.current = place.placeId;
+          hoveredPlaceIdRef.current = placeId;
         });
         kakao.maps.event.addListener(marker, "mouseout", () => {
           // 곧바로 지우지 않고 짧게 미룬다 — 이 사이 같은 핀에 mouseover가 다시 오면(위
@@ -500,16 +552,11 @@ export default function MapCanvas({
           }, 80);
         });
       }
-      markersRef.current[place.placeId] = marker;
-      markerPlacesRef.current[place.placeId] = place;
-      newMarkers.push(marker);
+      markersRef.current[placeId] = marker;
+      toAdd.push(marker);
     }
-    clusterer.addMarkers(newMarkers);
-
-    return () => {
-      // 다음 렌더링 전에 이전 마커 정리(위에서도 하지만, effect cleanup으로 이중 안전망)
-    };
-  }, [places, onSelectPlace, onPrefetchPlace, isDesktop]);
+    if (toAdd.length) clusterer.addMarkers(toAdd);
+  }, [places, isDesktop]);
 
   // [프로젝트 연동] 검색/필터와 무관하게 항상 떠 있는 별도 레이어. 클러스터러에는 섞지 않고
   // (개수가 적고 항상 눈에 띄어야 하므로) 별도 마커로 직접 얹는다. 클릭하면 이 지도 앱의
