@@ -968,13 +968,6 @@ export default function MapCanvas({
       isolatedMarkerRef.current.setMap(null);
       isolatedMarkerRef.current = null;
     }
-    // 합성 클러스터 모드 중에 장소를 선택하면(예: 목록에서 바로 클릭) 곧 레벨 4로 확대되며
-    // 원래 방식으로 돌아가지만, 그 전환이 끝나기 전 잠깐 뱃지가 고립 마커와 함께 남을 수
-    // 있다. 미리 걷어낸다.
-    if (syntheticClusterRef.current.length) {
-      syntheticClusterRef.current.forEach((o) => o.setMap(null));
-      syntheticClusterRef.current = [];
-    }
     if (!selectedPlaceId) {
       if (clusterer) {
         clusterer.clear();
@@ -984,6 +977,16 @@ export default function MapCanvas({
     }
     const place = places.find((p) => p.placeId === selectedPlaceId);
     if (!place) return;
+
+    // 합성 클러스터 모드 중에 장소를 선택하면(예: 목록에서 바로 클릭) 곧 레벨 4로 확대되며
+    // 원래 방식으로 돌아가지만, 그 전환이 끝나기 전 잠깐 뱃지가 고립 마커와 함께 남을 수
+    // 있다. 실제로 장소를 선택해 고립시키는 이 지점에서만 걷어낸다 — 위 "선택 없음" 갈래는
+    // places가 바뀔 때마다(뷰포트 재조회 등) 매번 실행되므로, 거기서 걷어내면 방금 다른
+    // effect가 그려 둔 합성 뱃지를 곧바로 지워버린다(실제로 겪은 버그).
+    if (syntheticClusterRef.current.length) {
+      syntheticClusterRef.current.forEach((o) => o.setMap(null));
+      syntheticClusterRef.current = [];
+    }
 
     if (clusterer) clusterer.clear();
     Object.values(markersRef.current).forEach((m) => m.setMap(null));
