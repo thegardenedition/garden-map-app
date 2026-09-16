@@ -786,25 +786,33 @@ export default function MapCanvas({
       });
       if (isDesktop) {
         kakao.maps.event.addListener(marker, "mouseover", () => {
-          // 방금 전 mouseout으로 예약해 둔 제거를 취소한다 — 같은 핀에 대한 되풀이(깜빡임)라면
-          // 여기서 멈추고, 아래로 내려가지 않는다(이미 같은 핀 툴팁이 떠 있으므로 다시 만들
-          // 필요가 없다).
+          // [호버 시 핀이 떨리는 문제 — 2026-09-16]
+          // 예전엔 mouseout에서 리프트 되돌리기(HOVER_DROP_FRAMES)를 곧바로 실행했다. 그런데
+          // setImage()로 마커 이미지를 몇 단계 다른 크기로 갈아 끼우는 동안 커서 아래 요소가
+          // 바뀌면서 브라우저가 mouseout/mouseover를 다시 쏠 수 있고(호버 툴팁 깜빡임과 같은
+          // 근본 원인), 그때마다 "당겨 내리기 시작 → 곧바로 취소하지만 이미 한 프레임 내려간
+          // 채로 다시 올리기" 가 반복되면 핀이 커졌다 작아졌다 떨리는 것처럼 보였다.
+          // 되돌리기는 아래 mouseout에서 툴팁과 같은 80ms 유예를 거친 뒤에만 시작하게 옮기고,
+          // 대신 리프트는 (이미 켜져 있어도) 매번 다시 걸어 되풀이 상황에서도 항상 "켜진 상태"로
+          // 수렴하게 한다 — animateMarkerFrames의 job 토큰이 오래된 되돌리기 프레임을 알아서
+          // 무효화한다.
           if (hoverHideTimerRef.current) {
             clearTimeout(hoverHideTimerRef.current);
             hoverHideTimerRef.current = null;
           }
-          if (hoveredPlaceIdRef.current === placeId && hoverOverlayRef.current) return;
           const current = markerPlacesRef.current[placeId];
           if (!current) return;
-          if (hoverOverlayRef.current) hoverOverlayRef.current.setMap(null);
-          hoverOverlayRef.current = new kakao.maps.CustomOverlay({
-            position: marker.getPosition(),
-            content: hoverTooltipHtml(current),
-            yAnchor: 1,
-            zIndex: 100,
-          });
-          hoverOverlayRef.current.setMap(map);
-          hoveredPlaceIdRef.current = placeId;
+          if (!(hoveredPlaceIdRef.current === placeId && hoverOverlayRef.current)) {
+            if (hoverOverlayRef.current) hoverOverlayRef.current.setMap(null);
+            hoverOverlayRef.current = new kakao.maps.CustomOverlay({
+              position: marker.getPosition(),
+              content: hoverTooltipHtml(current),
+              yAnchor: 1,
+              zIndex: 100,
+            });
+            hoverOverlayRef.current.setMap(map);
+            hoveredPlaceIdRef.current = placeId;
+          }
           // [호버 리프트] 툴팁만으로는 "지금 이걸 가리키고 있다"는 확인이 약하다. 핀 자체를
           // 살짝 키워 데스크톱 카카오맵 자체의 POI 호버 반응과 같은 언어를 쓴다.
           animateMarkerFrames(kakao, marker, current, pinSizeRef.current, HOVER_LIFT_FRAMES, markerAnimJobRef.current, placeId, 45);
@@ -812,7 +820,10 @@ export default function MapCanvas({
         kakao.maps.event.addListener(marker, "mouseout", () => {
           // 곧바로 지우지 않고 짧게 미룬다 — 이 사이 같은 핀에 mouseover가 다시 오면(위
           // 핸들러가) 이 타이머를 취소해서 화면이 흔들리지 않는다. 진짜로 마우스가 다른
-          // 곳으로 떠난 경우에만 아래가 실행되어 툴팁이 사라진다.
+          // 곳으로 떠난 경우에만 아래가 실행되어 툴팁이 사라지고 핀도 원래 크기로 돌아간다.
+          // 되돌리기 애니메이션 자체를 이 유예 뒤로 옮긴 것이 핀 떨림 수정의 핵심이다 —
+          // 되풀이되는 mouseout마다 매번 즉시 되돌리기를 시작하지 않으므로, 진짜로 떠난
+          // 경우가 아니면 애니메이션이 아예 시작되지 않는다.
           if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
           hoverHideTimerRef.current = setTimeout(() => {
             if (hoverOverlayRef.current) {
@@ -821,11 +832,11 @@ export default function MapCanvas({
             }
             hoveredPlaceIdRef.current = null;
             hoverHideTimerRef.current = null;
+            const current = markerPlacesRef.current[placeId];
+            if (current) {
+              animateMarkerFrames(kakao, marker, current, pinSizeRef.current, HOVER_DROP_FRAMES, markerAnimJobRef.current, placeId, 45);
+            }
           }, 80);
-          const current = markerPlacesRef.current[placeId];
-          if (current) {
-            animateMarkerFrames(kakao, marker, current, pinSizeRef.current, HOVER_DROP_FRAMES, markerAnimJobRef.current, placeId, 45);
-          }
         });
       }
       markersRef.current[placeId] = marker;
