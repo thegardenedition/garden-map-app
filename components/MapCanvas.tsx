@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- 카카오맵 JS SDK는 공식 타입 정의가 없는 전역 스크립트라 any가 불가피하다 */
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import type { Place, ProjectPin } from "@/lib/types";
 import { SUB_DEFS, formatDistance } from "@/lib/types";
@@ -76,6 +76,91 @@ function toMarkerImage(kakao: any, key: string, svg: string, size: PinSize) {
  */
 function pinSizeForLevel(level: number): PinSize {
   return level >= 6 ? PIN_COMPACT : PIN_DEFAULT;
+}
+
+/*
+ * [넓은 화면에서는 마커를 아예 만들지 않는다 — 성능]
+ * 레벨 8 이상은 클러스터러가 결국 전부 뭉쳐서 숫자 원으로만 보여준다(위 표 참고). 그런데
+ * 마커 수가 많은 화면(전국 축소 상태 등, 수백~천 개)에서는 어차피 안 보일 낱개 마커를
+ * 계속 만들어 카카오 지도가 매 팬/줌 프레임마다 그 위치를 다시 계산하게 했다 — 손으로
+ * 지도를 옮기면 느리다는 체감의 실제 원인이었다.
+ *
+ * 이 레벨·개수 조건을 만족하면 낱개 Marker+MarkerClusterer 대신, 화면을 격자로 나눠 칸별
+ * 개수만 세어 우리가 직접 원 뱃지(kakao.maps.CustomOverlay)를 그린다 — 스타일은 아래
+ * MarkerClusterer의 styles를 그대로 재사용해 두 경로가 레벨 8 경계를 넘나들 때도 같은
+ * 것으로 보이게 한다. 개수는 실제로 가져온 places 전체를 세므로 정확하다 — 서버 요청량은
+ * 그대로이고, 뱃지 숫자가 줄어들거나 거짓이 되지 않는다. 줄어드는 것은 오직 "실제로
+ * 만드는 마커 개수"뿐이다. 레벨이 8 미만으로 내려가 개별 핀이 다시 의미를 갖는 순간
+ * 원래 방식(낱개 마커 + 네이티브 클러스터러)으로 되돌아간다.
+ */
+const CLUSTER_ONLY_LEVEL = 8; // 아래 MarkerClusterer의 minLevel과 반드시 같은 값이어야 한다.
+const SYNTHETIC_CLUSTER_THRESHOLD = 150; // 이보다 적으면 원래 방식도 이미 가볍다.
+
+function clusterTier(count: number): number {
+  return count < 10 ? 0 : count < 100 ? 1 : 2;
+}
+
+// 카카오 MarkerClusterer의 styles 배열과 시각적으로 동일한 원 뱃지 DOM을 직접 만든다.
+function clusterBadgeElement(count: number): HTMLDivElement {
+  const tier = clusterTier(count);
+  const size = [34, 46, 60][tier];
+  const font = [12, 13, 15][tier];
+  const bg = ["rgba(6,16,125,.88)", "rgba(6,16,125,.92)", "rgba(6,16,125,.96)"][tier];
+  const border = [2, 3, 3][tier];
+  const weight = tier === 2 ? 800 : 700;
+  const shadow = [
+    "0 2px 8px rgba(0,0,0,.28)",
+    "0 3px 10px rgba(0,0,0,.3)",
+    "0 4px 14px rgba(0,0,0,.34)",
+  ][tier];
+  const el = document.createElement("div");
+  el.textContent = String(count);
+  el.style.cssText =
+    `cursor:pointer;width:${size}px;height:${size}px;line-height:${size}px;font-size:${font}px;` +
+    `background:${bg};border-radius:50%;color:#E1FC48;text-align:center;font-weight:${weight};` +
+    `border:${border}px solid #fff;box-sizing:border-box;box-shadow:${shadow};`;
+  return el;
+}
+
+interface ClusterBucket {
+  lat: number;
+  lng: number;
+  count: number;
+}
+
+// 현재 화면 범위를 cols×cols 격자로 나눠 장소를 칸별로 묶는다. 격자 칸 수를 화면 범위에
+// 비례해 정하므로(절대 위경도 크기로 고정하지 않으므로), 확대 정도와 무관하게 뱃지 개수가
+// 비슷한 수준으로 유지된다.
+function computeClusterBuckets(
+  places: Place[],
+  bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number },
+  cols = 16
+): ClusterBucket[] {
+  const spanLat = Math.max(bounds.maxLat - bounds.minLat, 1e-6);
+  const spanLng = Math.max(bounds.maxLng - bounds.minLng, 1e-6);
+  const cellLat = spanLat / cols;
+  const cellLng = spanLng / cols;
+  const cells = new Map<string, { sumLat: number; sumLng: number; count: number }>();
+  for (const place of places) {
+    const [lng, lat] = place.coordinates;
+    if (!lat || !lng) continue;
+    const cy = Math.floor((lat - bounds.minLat) / cellLat);
+    const cx = Math.floor((lng - bounds.minLng) / cellLng);
+    const key = cy + "_" + cx;
+    const cell = cells.get(key);
+    if (cell) {
+      cell.sumLat += lat;
+      cell.sumLng += lng;
+      cell.count += 1;
+    } else {
+      cells.set(key, { sumLat: lat, sumLng: lng, count: 1 });
+    }
+  }
+  return Array.from(cells.values()).map((c) => ({
+    lat: c.sumLat / c.count,
+    lng: c.sumLng / c.count,
+    count: c.count,
+  }));
 }
 
 function placeMarkerImage(kakao: any, place: Place, selected = false, size?: PinSize) {
@@ -170,6 +255,9 @@ export default function MapCanvas({
   // 사용자가 다시 확대/축소하면, 진행 중이던 이전 작업은 이 값이 바뀐 것으로 감지해 스스로
   // 멈춘다 — 그러지 않으면 오래된 작업과 새 작업이 뒤섞여 마커 크기가 잘못 남을 수 있다.
   const pinResizeJobRef = useRef(0);
+  // [합성 클러스터 오버레이] CLUSTER_ONLY_LEVEL 이상 + 장소가 많을 때 낱개 마커 대신 그리는
+  // 격자별 원 뱃지들. 실제 Marker/클러스터러와는 별개 레이어라 따로 추적해야 걷어낼 수 있다.
+  const syntheticClusterRef = useRef<any[]>([]);
   const projectMarkersRef = useRef<any[]>([]);
   const isolatedMarkerRef = useRef<any>(null);
   const userMarkerRef = useRef<any>(null);
@@ -198,6 +286,10 @@ export default function MapCanvas({
   const onPrefetchPlaceRef = useRef(onPrefetchPlace);
   const hintRef = useRef<HTMLDivElement | null>(null);
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // [합성 클러스터 전환 판단용] ref는 값이 바뀌어도 아래 마커 렌더링 effect를 다시 돌리지
+  // 못한다(그 effect는 places/isDesktop 변경에만 반응했다) — 레벨 8 경계를 넘나드는 순간을
+  // 놓치지 않으려면 state로도 들고 있어야 한다.
+  const [zoomLevel, setZoomLevel] = useState<number | null>(null);
 
   useEffect(() => {
     isDesktopRef.current = isDesktop;
@@ -304,6 +396,7 @@ export default function MapCanvas({
         map.setCenter(new kakao.maps.LatLng(SEOUL_METRO.lat, SEOUL_METRO.lng));
         map.setZoomable(!isDesktopRef.current);
         mapRef.current = map;
+        setZoomLevel(map.getLevel());
 
         // ["현 위치에서 재검색"] dragend는 사용자가 손으로 지도를 끌었을 때만 발생하고,
         // panTo() 같은 프로그램적 이동(검색 결과로 자동 이동 등)에는 발생하지 않는다. 그래서
@@ -321,6 +414,9 @@ export default function MapCanvas({
         // 한 번에 80개씩만 처리하고 다음 프레임에 이어서, 전체 작업을 여러 프레임에 걸쳐
         // 나눠 부담을 흩뜨린다 — 결과(모든 마커의 최종 크기)는 그대로다.
         kakao.maps.event.addListener(map, "zoom_changed", () => {
+          // 합성 클러스터 전환은 핀 크기 구간과 무관하게 매 레벨 변화마다 판단해야 하므로,
+          // 아래 크기-구간 조기 반환보다 먼저 state를 갱신한다.
+          setZoomLevel(map.getLevel());
           const size = pinSizeForLevel(map.getLevel());
           if (size.width === pinWidthRef.current) return;
           pinWidthRef.current = size.width;
@@ -456,6 +552,8 @@ export default function MapCanvas({
       if (searchCircleRef.current) searchCircleRef.current.setMap(null);
       if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
       if (hoverOverlayRef.current) hoverOverlayRef.current.setMap(null);
+      syntheticClusterRef.current.forEach((o) => o.setMap(null));
+      syntheticClusterRef.current = [];
       projectMarkersRef.current.forEach((m) => m.setMap(null));
       projectMarkersRef.current = [];
       if (clustererRef.current) clustererRef.current.clear();
@@ -486,8 +584,51 @@ export default function MapCanvas({
     const clusterer = clustererRef.current;
     if (!kakao?.maps || !map || !clusterer) return;
 
+    const level = zoomLevel ?? map.getLevel();
+    const wantsSyntheticClusters = level >= CLUSTER_ONLY_LEVEL && places.length > SYNTHETIC_CLUSTER_THRESHOLD;
+
+    if (wantsSyntheticClusters) {
+      // 방금 이 레벨로 넘어왔다면 낱개 마커가 아직 남아 있을 수 있다 — 어차피 안 보일
+      // 것들이니 전부 걷어낸다.
+      if (Object.keys(markersRef.current).length) {
+        clusterer.clear();
+        Object.values(markersRef.current).forEach((m: any) => m.setMap(null));
+        markersRef.current = {};
+        markerPlacesRef.current = {};
+      }
+
+      syntheticClusterRef.current.forEach((o) => o.setMap(null));
+      const bounds = map.getBounds();
+      const sw = bounds.getSouthWest();
+      const ne = bounds.getNorthEast();
+      const buckets = computeClusterBuckets(places, {
+        minLat: sw.getLat(),
+        maxLat: ne.getLat(),
+        minLng: sw.getLng(),
+        maxLng: ne.getLng(),
+      });
+      syntheticClusterRef.current = buckets.map((bucket) => {
+        const content = clusterBadgeElement(bucket.count);
+        const position = new kakao.maps.LatLng(bucket.lat, bucket.lng);
+        // 실제 클러스터 클릭과 같은 동작: 이 칸 중심을 기준으로 한 단계만 부드럽게 확대한다.
+        content.addEventListener("click", () => {
+          map.setLevel(map.getLevel() - 1, { anchor: position, animate: true });
+        });
+        const overlay = new kakao.maps.CustomOverlay({ position, content, zIndex: 10 });
+        overlay.setMap(map);
+        return overlay;
+      });
+      return;
+    }
+
+    // 합성 클러스터 모드에서 벗어났다면(확대해서 개별 핀이 다시 의미 있어졌다면) 걷어낸다.
+    if (syntheticClusterRef.current.length) {
+      syntheticClusterRef.current.forEach((o) => o.setMap(null));
+      syntheticClusterRef.current = [];
+    }
+
     // 지금 보고 있는 축척에 맞는 크기로 만든다. 줌이 바뀌면 위 zoom_changed 가 갈아 끼운다.
-    const currentPinSize = pinSizeForLevel(map.getLevel());
+    const currentPinSize = pinSizeForLevel(level);
     pinWidthRef.current = currentPinSize.width;
 
     const nextIds = new Set(places.map((p) => p.placeId));
@@ -576,7 +717,7 @@ export default function MapCanvas({
       toAdd.push(marker);
     }
     if (toAdd.length) clusterer.addMarkers(toAdd);
-  }, [places, isDesktop]);
+  }, [places, isDesktop, zoomLevel]);
 
   // [프로젝트 연동] 검색/필터와 무관하게 항상 떠 있는 별도 레이어. 클러스터러에는 섞지 않고
   // (개수가 적고 항상 눈에 띄어야 하므로) 별도 마커로 직접 얹는다. 클릭하면 이 지도 앱의
@@ -710,6 +851,13 @@ export default function MapCanvas({
     if (isolatedMarkerRef.current) {
       isolatedMarkerRef.current.setMap(null);
       isolatedMarkerRef.current = null;
+    }
+    // 합성 클러스터 모드 중에 장소를 선택하면(예: 목록에서 바로 클릭) 곧 레벨 4로 확대되며
+    // 원래 방식으로 돌아가지만, 그 전환이 끝나기 전 잠깐 뱃지가 고립 마커와 함께 남을 수
+    // 있다. 미리 걷어낸다.
+    if (syntheticClusterRef.current.length) {
+      syntheticClusterRef.current.forEach((o) => o.setMap(null));
+      syntheticClusterRef.current = [];
     }
     if (!selectedPlaceId) {
       if (clusterer) {
