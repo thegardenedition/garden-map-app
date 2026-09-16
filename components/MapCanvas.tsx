@@ -6,7 +6,7 @@ import Script from "next/script";
 import type { Place, ProjectPin } from "@/lib/types";
 import { SUB_DEFS, formatDistance } from "@/lib/types";
 import {
-  GROUP_COLOR,
+  PIN_ACCENT_COLOR,
   PIN_COMPACT,
   PIN_DEFAULT,
   PIN_HERO,
@@ -1001,7 +1001,7 @@ export default function MapCanvas({
      */
     const size = PIN_SELECTED;
     const svg = placePinSvg(place.categoryDepth1, place.categoryDepth2, true);
-    const glowColor = GROUP_COLOR[place.categoryDepth1] ?? GROUP_COLOR.park;
+    const glowColor = PIN_ACCENT_COLOR[place.categoryDepth1] ?? PIN_ACCENT_COLOR.park;
     const content = document.createElement("div");
     content.style.cssText = `position:relative;width:${size.width}px;height:${size.height}px;`;
     content.innerHTML =

@@ -92,15 +92,40 @@ export function iconPathFor(group: GroupId, sub?: SubId | null): string {
 /* ────────────────────────── 지도 마커 ────────────────────────── */
 
 /*
- * [핀 도형] viewBox는 항상 40×48로 고정하고, 실제 크기는 <img> 폭/높이로만 바꾼다.
- * 좌표계가 하나뿐이라 기본/선택 상태에서 아이콘 위치를 다시 계산할 필요가 없다.
- *  - 머리 중심 (20, 15.6), 반지름 13.2
- *  - 뾰족한 끝(= 지도상 실제 좌표) (20, 41)
- *  - 아이콘은 24 그리드를 0.72배 = 17.3px로 머리 정중앙에 놓는다
+ * [핀 도형 — 물방울 → 네이비 배지, 2026-09-16]
+ * 예전 물방울 핀은 그룹마다 다른 원색(주황·초록·파랑)을 몸통에 그대로 칠했다. 사용해 보니
+ * "그냥 지도 서비스에 흔한 카테고리 색"으로 보이고, 이 지도가 채널그린 브랜드(네이비
+ * #06107D + 라임 #E1FC48 — 클러스터 뱃지와 프로젝트 핀이 이미 쓰던 조합)라는 게 핀 자체에는
+ * 전혀 드러나지 않는다는 피드백을 받았다.
+ *
+ * 그래서 몸통 색을 그룹마다 바꾸는 대신 전부 브랜드 네이비로 통일하고, 그룹 구분은 테두리+
+ * 아이콘 색(PIN_ACCENT_COLOR)만으로 하도록 뒤집었다. 끝에는 항상 라임 점을 찍어 클러스터
+ * 뱃지·프로젝트 핀과 "같은 브랜드의 지도 요소"로 묶인다. 모양도 물방울 대신 둥근 사각
+ * 배지+꼬리로 바꿔 다른 지도 서비스의 기본 마커와 실루엣 자체가 달라지게 했다.
+ *
+ * viewBox는 그대로 40×48, 뾰족한 끝(= 지도상 실제 좌표)도 그대로 (20, 41)이라 앵커 계산
+ * (PIN_TIP_RATIO, scalePinSize)과 크기 상수는 손댈 필요가 없었다.
+ *  - 사각 몸통 x:5~35 y:4~32, 모서리 반지름 8
+ *  - 꼬리는 몸통 바닥 x:16~24에서 시작해 (20, 41)로 모인다
+ *  - 라임 점은 꼬리 위, (20, 34.5)
+ *  - 아이콘은 24 그리드를 0.72배 = 17.3px로 사각 몸통 정중앙 (20, 18)에 놓는다
  *  - 그림자는 SVG 필터 대신 발밑 타원 하나. 마커가 수천 개 떠도 렌더가 무겁지 않다.
  */
-const PIN_BODY =
-  "M20 2.4C12.7 2.4 6.8 8.3 6.8 15.6c0 9.4 11.6 24.3 12.5 25.5a.9.9 0 0 0 1.4 0c.9-1.2 12.5-16.1 12.5-25.5C33.2 8.3 27.3 2.4 20 2.4Z";
+const PIN_BADGE_PATH =
+  "M13 4H27A8 8 0 0 1 35 12V24A8 8 0 0 1 27 32H24L20 41L16 32H13A8 8 0 0 1 5 24V12A8 8 0 0 1 13 4Z";
+
+// 브랜드 네이비 — 모든 장소 핀의 바탕색. 그룹은 이제 이 색이 아니라 아래 PIN_ACCENT_COLOR로 구분한다.
+export const PIN_BASE = "#06107D";
+
+// [핀 전용 액센트] GROUP_COLOR는 칩·목록·상세에서 흰/연한 배경 위 아이콘 선 색으로 쓰여
+// 대비 기준이 다르다(흰 배경 위에서 읽혀야 함). 여기는 반대로 어두운 네이비 배지 위에
+// 올라가므로 더 밝고 채도 높은 톤이 필요해 별도로 둔다. 색상 계열(주황·초록·파랑)은
+// GROUP_COLOR와 맞춰 "이 색 = 이 그룹"이라는 감각이 화면마다 흔들리지 않게 했다.
+export const PIN_ACCENT_COLOR: Record<GroupId, string> = {
+  company: "#FF8A3D",
+  material: "#4ADE80",
+  park: "#5EA8FF",
+};
 
 export const PIN_TIP_RATIO = 41 / 48; // 뾰족한 끝의 세로 위치 비율 — 마커 앵커 계산에 쓴다
 
@@ -146,36 +171,36 @@ function lighten(hex: string, amount: number): string {
 }
 
 /**
- * 지도 마커용 SVG 문자열. 색을 바꾸는 대신 크기와 흰 테두리로 선택 상태를 알린다 —
- * 선택했다고 색을 바꾸면 그 핀이 어느 그룹인지 알 수 없게 된다.
+ * 지도 마커용 SVG 문자열. 몸통(body)은 항상 브랜드색 하나뿐이고, 그룹 구분은 테두리+아이콘
+ * 색(accent)만으로 한다 — 선택했다고 accent를 바꾸면 그 핀이 어느 그룹인지 알 수 없게
+ * 되므로, 선택 상태는 여전히 크기와 테두리 두께로만 알린다.
  *
- * [흰 테두리는 선택 여부와 무관하게 항상 있어야 한다 — 2026-09-10]
- * 기본 상태 테두리가 rgba(0,0,0,.16)로 사실상 안 보이는 수준이었다. 그룹색 세 가지(테라코타·
- * 딥그린·블루)가 실제 카카오맵 타일의 도로·숲·수면 색과 채도·명도대가 겹쳐서, 지도 위에 놓이면
- * 핀이 배경에 섞여 들어갔다. 브랜드 팔레트(채도를 일부러 낮춘 톤)는 그대로 두고, 모든 핀에
- * 얇은 흰 테두리를 둘러 배경이 무슨 색이든 실루엣이 분리되게 한다. 선택 시에는 이 테두리를
- * 두껍게만 키운다 — 그래야 "선택 여부는 두께 차이"라는 원래 설계 의도와 일치한다.
- *
- * [평면 채색 → 위에서 아래로 그라디언트 — 2026-09-16]
- * 네이버 지도 자체 브랜드 핀은 상단에 밝은 하이라이트가 도는 광택 있는 형태다. 여기서도 몸통을
- * 단색 대신 옅은 톤(위)→기본색(아래) 세로 그라디언트로 채워 같은 입체감을 냈다. SVG 필터(블러)는
- * 마커 수천 개에서 렌더 비용이 크다는 이유로 피해 왔는데(발밑 그림자가 필터 대신 단순 타원인
- * 이유와 같다), 그라디언트는 필터가 아니라 그냥 채우기 정의라 그 제약과 무관하다.
+ * [몸통에도 아주 옅은 그라디언트] 완전 평면 단색은 배지가 스티커처럼 납작해 보였다. 위(살짝
+ * 밝게)→아래(기본 네이비) 그라디언트로 아주 약하게만 입체감을 준다 — 색 자체(주황·초록·파랑
+ * 대신 통일한 네이비)를 흐리지 않도록 옅은 물방울 핀 때(0.34)보다 훨씬 적게(0.14) 섞는다.
+ * SVG 필터(블러)가 아니라 채우기 정의라 "마커 수천 개에서 필터 비용이 크다"는 제약과 무관하다.
  */
-export function pinSvg(opts: { fill: string; ink?: string; iconPath: string; selected?: boolean }): string {
-  const ink = opts.ink ?? "#ffffff";
-  const rim = opts.selected ? 'stroke="#ffffff" stroke-width="2.6"' : 'stroke="#ffffff" stroke-width="1.6"';
-  const gradId = `g${opts.fill.replace("#", "")}`;
+export function pinSvg(opts: {
+  body: string;
+  accent: string;
+  iconPath: string;
+  tipDot?: string;
+  selected?: boolean;
+}): string {
+  const rimWidth = opts.selected ? 2.8 : 1.8;
+  const dotR = opts.selected ? 2.6 : 2.1;
+  const gradId = `gb${opts.body.replace("#", "")}`;
   return (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 48">' +
     `<defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">` +
-    `<stop offset="0" stop-color="${lighten(opts.fill, 0.34)}"/>` +
-    `<stop offset="1" stop-color="${opts.fill}"/>` +
+    `<stop offset="0" stop-color="${lighten(opts.body, 0.14)}"/>` +
+    `<stop offset="1" stop-color="${opts.body}"/>` +
     "</linearGradient></defs>" +
     `<ellipse cx="20" cy="43.4" rx="${opts.selected ? 6 : 5.2}" ry="1.9" fill="rgba(20,24,40,${opts.selected ? ".22" : ".16"})"/>` +
-    `<path d="${PIN_BODY}" fill="url(#${gradId})" ${rim}/>` +
-    '<g transform="translate(11.36 6.96) scale(.72)" fill="none" stroke="' +
-    ink +
+    `<path d="${PIN_BADGE_PATH}" fill="url(#${gradId})" stroke="${opts.accent}" stroke-width="${rimWidth}"/>` +
+    (opts.tipDot ? `<circle cx="20" cy="34.5" r="${dotR}" fill="${opts.tipDot}"/>` : "") +
+    '<g transform="translate(11.36 9.36) scale(.72)" fill="none" stroke="' +
+    opts.accent +
     '" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">' +
     opts.iconPath +
     "</g></svg>"
@@ -183,11 +208,20 @@ export function pinSvg(opts: { fill: string; ink?: string; iconPath: string; sel
 }
 
 export function placePinSvg(group: GroupId, sub: SubId | null | undefined, selected = false): string {
-  return pinSvg({ fill: GROUP_COLOR[group] ?? GROUP_COLOR.park, iconPath: iconPathFor(group, sub), selected });
+  return pinSvg({
+    body: PIN_BASE,
+    accent: PIN_ACCENT_COLOR[group] ?? PIN_ACCENT_COLOR.park,
+    iconPath: iconPathFor(group, sub),
+    tipDot: PROJECT_PIN_COLOR, // 라임 — 클러스터 뱃지·프로젝트 핀과 같은 브랜드임을 알린다
+    selected,
+  });
 }
 
 export function projectPinSvg(): string {
-  return pinSvg({ fill: PROJECT_PIN_COLOR, ink: PROJECT_PIN_INK, iconPath: PROJECT_ICON_PATH });
+  // 프로젝트 핀은 장소 핀과 색을 뒤집는다(라임 바탕 + 네이비 테두리/아이콘/점) — 이미 그렇게
+  // 구분해 왔고, 장소 핀이 몸통을 네이비로 바꾼 지금도 "이건 장소가 아니라 게시글"이라는
+  // 신호가 여전히 살아 있다.
+  return pinSvg({ body: PROJECT_PIN_COLOR, accent: PROJECT_PIN_INK, iconPath: PROJECT_ICON_PATH, tipDot: PROJECT_PIN_INK });
 }
 
 export function svgDataUri(svg: string): string {
