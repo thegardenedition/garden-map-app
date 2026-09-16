@@ -166,6 +166,10 @@ export default function MapCanvas({
   // 알아야 하므로 나란히 들고 있는다(markersRef 의 값 모양을 바꾸면 쓰는 곳이 다섯 군데라 위험).
   const markerPlacesRef = useRef<Record<string, Place>>({});
   const pinWidthRef = useRef<number>(PIN_DEFAULT.width);
+  // [핀 리사이즈 작업 취소 토큰] 아래 zoom_changed 핸들러가 청크 단위로 나눠 처리하는 도중
+  // 사용자가 다시 확대/축소하면, 진행 중이던 이전 작업은 이 값이 바뀐 것으로 감지해 스스로
+  // 멈춘다 — 그러지 않으면 오래된 작업과 새 작업이 뒤섞여 마커 크기가 잘못 남을 수 있다.
+  const pinResizeJobRef = useRef(0);
   const projectMarkersRef = useRef<any[]>([]);
   const isolatedMarkerRef = useRef<any>(null);
   const userMarkerRef = useRef<any>(null);
@@ -310,16 +314,32 @@ export default function MapCanvas({
         });
 
         // [줌 단계가 바뀌면 핀 크기도 바뀐다] 크기 구간이 실제로 넘어갔을 때만 손댄다.
-        // 레벨이 한 칸 움직일 때마다 수백 개 마커의 이미지를 다시 만들면 확대가 버벅인다.
+        //
+        // [청크로 나눠 처리 — 2026-09-16] 마커가 수백~천 개인 화면(전국 축소 상태)에서는
+        // 이 루프 하나가 한 프레임 안에서 다 돌면서 메인 스레드를 수백 ms씩 막았다. 핀치줌
+        // 도중 이게 걸리면 확대 애니메이션이 뚝뚝 끊겨 보인다. requestAnimationFrame으로
+        // 한 번에 80개씩만 처리하고 다음 프레임에 이어서, 전체 작업을 여러 프레임에 걸쳐
+        // 나눠 부담을 흩뜨린다 — 결과(모든 마커의 최종 크기)는 그대로다.
         kakao.maps.event.addListener(map, "zoom_changed", () => {
           const size = pinSizeForLevel(map.getLevel());
           if (size.width === pinWidthRef.current) return;
           pinWidthRef.current = size.width;
-          for (const [id, marker] of Object.entries(markersRef.current)) {
-            const place = markerPlacesRef.current[id];
-            if (!place) continue;
-            marker.setImage(placeMarkerImage(kakao, place, false, size));
-          }
+          const job = ++pinResizeJobRef.current;
+          const entries = Object.entries(markersRef.current);
+          const CHUNK = 80;
+          let i = 0;
+          const step = () => {
+            if (job !== pinResizeJobRef.current) return; // 그 사이 다시 확대/축소함 — 이 작업은 폐기
+            const end = Math.min(i + CHUNK, entries.length);
+            for (; i < end; i++) {
+              const [id, marker] = entries[i];
+              const place = markerPlacesRef.current[id];
+              if (!place) continue;
+              marker.setImage(placeMarkerImage(kakao, place, false, size));
+            }
+            if (i < entries.length) requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
         });
 
         // [뷰포트 조회] idle은 드래그·줌·panTo가 모두 끝나 지도가 멈춘 뒤 한 번 발생한다.
