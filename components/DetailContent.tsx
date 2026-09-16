@@ -18,7 +18,7 @@ import LeadModal from "./LeadModal";
  * 셈이 된다. 날짜만 비교해 자동으로 열리게 해서, 그날 별도 배포 없이도 켜진다.
  * 그 전까지는 버튼 모양은 그대로 두고 onClick만 비워, 지금과 같은 화면을 유지한다.
  */
-const LEAD_FORM_LIVE_AT = new Date("2026-01-01T00:00:00+09:00").getTime();
+const LEAD_FORM_LIVE_AT = new Date("2026-09-23T00:00:00+09:00").getTime();
 
 // [href를 주면 값 자체가 하이퍼링크가 된다 — 2026-09-10]
 // 홈페이지 URL을 여기 텍스트로만 보여줬더니 링크처럼 보이는데 눌러도 아무 반응이 없었다
