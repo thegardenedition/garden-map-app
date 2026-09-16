@@ -542,9 +542,15 @@ function mergeDedup(...lists: Place[][]): Place[] {
         backfillContactFields(near, p);
         continue;
       }
-      byKey.set(k, p);
-      if (name) (kept ?? keptByName.set(name, []).get(name)!).push(p);
-      out.push(p);
+      // [입력을 건드리지 않는다 — 2026-09-11]
+      // backfillContactFields 는 남은 항목의 빈 칸을 제자리에서 채운다. 그 항목이 입력 배열의
+      // 객체 그대로라면 TanStack Query 캐시나 세션 캐시(공원 대장)에 든 객체를 바꾸는 셈이 되어,
+      // 한 번 채워진 값이 조회와 무관하게 세션 내내 남고 placeholderData 로 되돌아온 이전 결과도
+      // 달라져 있다. 얕은 복사본을 남겨 두고 채우기는 그 복사본에만 한다.
+      const own = { ...p };
+      byKey.set(k, own);
+      if (name) (kept ?? keptByName.set(name, []).get(name)!).push(own);
+      out.push(own);
     }
   }
   return out;

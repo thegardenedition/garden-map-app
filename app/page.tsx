@@ -482,28 +482,35 @@ export default function Page() {
           한 줄 길어지고 그만큼 지도가 좁아졌다. 홈 링크까지 들어와 스택이 더 길어졌으니 더욱
           그렇다. 지도 위에 겹쳐 띄우면 스택 높이가 변하지 않는다. 데스크톱도 같은 방식이다.
           지도만 보기 중에는 걷어낸 UI를 다시 지도 위에 끌어오는 셈이라 함께 숨긴다. */}
-      {showResearchHere && !mapUiHidden && (
-        <button
-          onClick={handleResearchHere}
-          className="tp-caption absolute left-1/2 z-[25] -translate-x-1/2 rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+      {/* [두 버튼을 한 줄에 나란히 — 2026-09-11]
+          "이 근처에서 찾기"(가운데)와 "지도 탐색으로 ✕"(오른쪽)가 같은 top 에 따로 놓여 있었다.
+          내 주변 모드에서 지도를 끌면 둘이 동시에 뜨는데, 360px 폰에서 실측하니 x 115~245 와
+          243~348 로 2px 겹쳤고 320px 에서는 크게 겹친다. 한 줄 flex 로 묶어 간격을 보장하고,
+          좁으면 줄바꿈되게 한다. 껍데기는 터치를 흘려보내고 버튼만 받는다(상단 스택과 같은 이유). */}
+      {!mapUiHidden && (showResearchHere || !isBrowseMode) && (
+        <div
+          className="pointer-events-none absolute inset-x-3 z-[25] flex flex-wrap items-center justify-center gap-2"
           style={{ top: sheetMinTop || 160 }}
         >
-          ⟳ 이 근처에서 찾기
-        </button>
+          {showResearchHere && (
+            <button
+              onClick={handleResearchHere}
+              className="tp-caption pointer-events-auto rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+            >
+              ⟳ 이 근처에서 찾기
+            </button>
+          )}
+          {!isBrowseMode && (
+            <button
+              onClick={exitToBrowse}
+              className="tp-caption pointer-events-auto rounded-full bg-white px-3 py-2 text-[11px] text-[var(--color-deep-blue)]/80 shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+            >
+              지도 탐색으로 ✕
+            </button>
+          )}
+        </div>
       )}
 
-      {/* [검색 종료 버튼을 시트 밖으로] 예전엔 바텀시트 안 상태 줄에 있었다. 시트는 peek이어도
-          화면의 30%를 차지하므로, 검색만 그만두고 싶을 때도 시트를 먼저 봐야 눈에 들어왔다.
-          상단 스택 바로 아래(재검색 버튼과 같은 자리)로 옮겨 지도를 보는 시선 안에 둔다. */}
-      {!isBrowseMode && !mapUiHidden && (
-        <button
-          onClick={exitToBrowse}
-          className="tp-caption absolute right-3 z-[25] rounded-full bg-white px-3 py-2 text-[11px] text-[var(--color-deep-blue)]/80 shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
-          style={{ top: sheetMinTop || 160 }}
-        >
-          지도 탐색으로 ✕
-        </button>
-      )}
 
       <BottomSheet
         snap={selectedPlaceId ? "peek" : sheetSnap}
