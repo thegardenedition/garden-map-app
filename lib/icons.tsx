@@ -102,7 +102,7 @@ export function iconPathFor(group: GroupId, sub?: SubId | null): string {
 const PIN_BODY =
   "M20 2.4C12.7 2.4 6.8 8.3 6.8 15.6c0 9.4 11.6 24.3 12.5 25.5a.9.9 0 0 0 1.4 0c.9-1.2 12.5-16.1 12.5-25.5C33.2 8.3 27.3 2.4 20 2.4Z";
 
-const PIN_TIP_RATIO = 41 / 48; // 뾰족한 끝의 세로 위치 비율 — 마커 앵커 계산에 쓴다
+export const PIN_TIP_RATIO = 41 / 48; // 뾰족한 끝의 세로 위치 비율 — 마커 앵커 계산에 쓴다
 
 export interface PinSize {
   width: number;
@@ -120,6 +120,30 @@ export const PIN_SELECTED: PinSize = { width: 48, height: 58, anchorX: 24, ancho
 // [축소용] 넓게 볼수록 핀 하나하나가 아니라 '어디에 몰려 있는가'가 궁금해진다. 그런데 같은
 // 크기로 두면 핀이 서로 겹쳐 덩어리로 뭉개지고, 정작 밀집도는 더 안 보인다. 한 단계 작게.
 export const PIN_COMPACT: PinSize = { width: 28, height: 34, anchorX: 14, anchorY: Math.round(34 * PIN_TIP_RATIO) };
+// [크기 세 번째 단계 — 2026-09-16] 기본/축소 두 단계만 있으면 아주 가까이 당겨도(레벨 1~3)
+// 핀이 더는 커지지 않아 "이 이상 확대해도 소용없다"는 인상을 준다. 네이버·카카오 자체
+// 지도도 줌이 깊어질수록 POI 마커가 계속 커지는 쪽에 가깝다. 가장 가까운 구간에서 한 단계
+// 더 키워 확대에 따른 크기 변화가 세 걸음(축소→기본→히어로)으로 이어지게 한다.
+export const PIN_HERO: PinSize = { width: 42, height: 50, anchorX: 21, anchorY: Math.round(50 * PIN_TIP_RATIO) };
+
+// [애니메이션용 임시 크기] 팝인·호버 리프트는 실제 상주 크기가 아니라 "지금 크기의 몇 %"로만
+// 필요하다. 매번 새 PinSize를 손으로 계산하지 않도록 배율만 받는다. anchorY는 항상 같은
+// PIN_TIP_RATIO로 다시 구하므로, 배율이 달라져도 핀의 뾰족한 끝은 원래 좌표에서 벗어나지 않는다.
+export function scalePinSize(base: PinSize, factor: number): PinSize {
+  const width = Math.max(1, Math.round(base.width * factor));
+  const height = Math.max(1, Math.round(base.height * factor));
+  return { width, height, anchorX: Math.round(width / 2), anchorY: Math.round(height * PIN_TIP_RATIO) };
+}
+
+// 16진 색을 흰색 쪽으로 amount(0~1)만큼 섞는다. 그라디언트의 밝은 쪽 정지색을 만드는 용도.
+function lighten(hex: string, amount: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (channel: number) => Math.min(255, Math.round(channel + (255 - channel) * amount));
+  const r = mix((n >> 16) & 255);
+  const g = mix((n >> 8) & 255);
+  const b = mix(n & 255);
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
 
 /**
  * 지도 마커용 SVG 문자열. 색을 바꾸는 대신 크기와 흰 테두리로 선택 상태를 알린다 —
@@ -131,14 +155,25 @@ export const PIN_COMPACT: PinSize = { width: 28, height: 34, anchorX: 14, anchor
  * 핀이 배경에 섞여 들어갔다. 브랜드 팔레트(채도를 일부러 낮춘 톤)는 그대로 두고, 모든 핀에
  * 얇은 흰 테두리를 둘러 배경이 무슨 색이든 실루엣이 분리되게 한다. 선택 시에는 이 테두리를
  * 두껍게만 키운다 — 그래야 "선택 여부는 두께 차이"라는 원래 설계 의도와 일치한다.
+ *
+ * [평면 채색 → 위에서 아래로 그라디언트 — 2026-09-16]
+ * 네이버 지도 자체 브랜드 핀은 상단에 밝은 하이라이트가 도는 광택 있는 형태다. 여기서도 몸통을
+ * 단색 대신 옅은 톤(위)→기본색(아래) 세로 그라디언트로 채워 같은 입체감을 냈다. SVG 필터(블러)는
+ * 마커 수천 개에서 렌더 비용이 크다는 이유로 피해 왔는데(발밑 그림자가 필터 대신 단순 타원인
+ * 이유와 같다), 그라디언트는 필터가 아니라 그냥 채우기 정의라 그 제약과 무관하다.
  */
 export function pinSvg(opts: { fill: string; ink?: string; iconPath: string; selected?: boolean }): string {
   const ink = opts.ink ?? "#ffffff";
   const rim = opts.selected ? 'stroke="#ffffff" stroke-width="2.6"' : 'stroke="#ffffff" stroke-width="1.6"';
+  const gradId = `g${opts.fill.replace("#", "")}`;
   return (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 48">' +
+    `<defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0" stop-color="${lighten(opts.fill, 0.34)}"/>` +
+    `<stop offset="1" stop-color="${opts.fill}"/>` +
+    "</linearGradient></defs>" +
     `<ellipse cx="20" cy="43.4" rx="${opts.selected ? 6 : 5.2}" ry="1.9" fill="rgba(20,24,40,${opts.selected ? ".22" : ".16"})"/>` +
-    `<path d="${PIN_BODY}" fill="${opts.fill}" ${rim}/>` +
+    `<path d="${PIN_BODY}" fill="url(#${gradId})" ${rim}/>` +
     '<g transform="translate(11.36 6.96) scale(.72)" fill="none" stroke="' +
     ink +
     '" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">' +
