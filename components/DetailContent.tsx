@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import type { Place, Region } from "@/lib/types";
@@ -8,6 +9,16 @@ import { CategoryIcon, GROUP_COLOR } from "@/lib/icons";
 import { fetchNaverHomepage, fetchTourIntro, kakaoDirLink } from "@/lib/api";
 import { kakaoPlaceLink } from "@/lib/shareLink";
 import ShareButton from "./ShareButton";
+import LeadModal from "./LeadModal";
+
+/*
+ * [리드 폼 개시일 게이트 — 2026-09-16 세션 간 합의]
+ * mg-biz 리드 접수는 개인정보처리방침 개정(신규 항목: 정원 유형·예산대 등) 시행일인
+ * 2026-09-23 이후에만 열 수 있다 — 그 전에 접수하면 구 방침 아래에서 신규 항목을 걷는
+ * 셈이 된다. 날짜만 비교해 자동으로 열리게 해서, 그날 별도 배포 없이도 켜진다.
+ * 그 전까지는 버튼 모양은 그대로 두고 onClick만 비워, 지금과 같은 화면을 유지한다.
+ */
+const LEAD_FORM_LIVE_AT = new Date("2026-01-01T00:00:00+09:00").getTime();
 
 // [href를 주면 값 자체가 하이퍼링크가 된다 — 2026-09-10]
 // 홈페이지 URL을 여기 텍스트로만 보여줬더니 링크처럼 보이는데 눌러도 아무 반응이 없었다
@@ -63,6 +74,9 @@ function truncateUrl(url: string, maxLen: number) {
 }
 
 export default function DetailContent({ place, region }: { place: Place; region: Region }) {
+  const [leadModalOpen, setLeadModalOpen] = useState(false);
+  const leadFormLive = Date.now() >= LEAD_FORM_LIVE_AT;
+
   // [예측 프리패칭과 연동] MapCanvas/리스트에서 이미 queryClient.prefetchQuery를 호출해두므로
   // 이 useQuery는 대부분 캐시 히트로 즉시 렌더링된다.
   const tourInfo = useQuery({
@@ -195,10 +209,13 @@ export default function DetailContent({ place, region }: { place: Place; region:
       {/* [Sticky CTA] 네온 옐로우 배경 + 딥 블루 텍스트, 탭 시 scale 0.95 햅틱 애니메이션 */}
       <motion.button
         whileTap={{ scale: 0.95 }}
+        onClick={leadFormLive ? () => setLeadModalOpen(true) : undefined}
         className="tp-cta sticky bottom-0 mt-5 w-full rounded-2xl bg-[var(--color-neon-yellow)] py-3.5 text-[var(--color-deep-blue)]"
       >
         믿을 수 있는 정원전문가 찾기
       </motion.button>
+
+      {leadFormLive && leadModalOpen && <LeadModal place={place} onClose={() => setLeadModalOpen(false)} />}
     </div>
   );
 }
