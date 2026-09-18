@@ -5,11 +5,16 @@ import type { Place, Region } from "@/lib/types";
 import DetailContent from "./DetailContent";
 
 /*
- * [모달로 명확히 하다 — 2026-09-09]
- * 리스트 시트는 지도를 계속 만질 수 있어야 하는 탐색 화면이라 비모달로 둔다. 장소 상세는
- * 성격이 다르다 — 하나의 대상에 집중하는 화면인데, 지금까지는 딤 처리도 없고 배경을 탭해
- * 닫는 방법도 없어서 우측 상단의 작은 ✕ 버튼이 유일한 탈출구였다. 배경을 어둡게 하고 탭하면
- * 닫히게 해서 이 화면만큼은 명확히 모달로 만든다.
+ * [모달이었다가 — 2026-09-09 → 2026-09-19 되돌림]
+ * 09-09에는 배경을 어둡게 하고 탭하면 닫히는 완전한 모달로 만들었다(하나의 대상에 집중하는
+ * 화면이라는 이유). 그런데 그 배경(`absolute inset-0`)이 z-[70]으로 화면 전체를 덮어,
+ * 장소를 선택한 동안에는 시트가 안 보이는 지도 윗부분까지 포함해 지도 자체를 전혀 만질 수
+ * 없었다 — 핀을 하나 눌러 상세를 본 다음, 지도를 손으로 옮겨 다른 곳을 보려면 먼저 이
+ * 시트를 닫아야만 했다. 대표 요청(09-19)으로 지도 조작을 막지 않도록 되돌린다 — 딤 처리는
+ * 그대로 두되 pointer-events-none으로 만들어 시각 효과만 남기고, 탭해서 닫는 동작은
+ * 뺐다(막고 있던 게 이 배경이라 pointer-events-none이면 어차피 클릭도 안 잡힌다). 닫는
+ * 길은 ✕ 버튼과 아래로 끌기 두 가지로 충분하다. 리스트 시트가 원래 "비모달"이었던 이유와
+ * 같은 이유로, 상세 시트도 지도 탐색을 막지 않는 쪽이 이 앱의 성격에 맞다.
  *
  * [손잡이와 드래그 닫기 — 2026-09-09]
  * 리스트 시트는 손잡이로 끌어올리고 내리는데, 상세 시트는 드래그가 아예 안 돼서 방금 리스트에서
@@ -37,11 +42,10 @@ export default function PlaceDetailSheet({
         <>
           <motion.div
             key="backdrop"
-            className="absolute inset-0 z-[70] bg-black/40"
+            className="pointer-events-none absolute inset-0 z-[70] bg-black/40"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
           />
           <motion.div
             key="sheet"
