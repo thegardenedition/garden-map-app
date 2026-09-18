@@ -175,13 +175,25 @@ interface ClusterBucket {
   count: number;
 }
 
+// [격자 칸 수를 화면 픽셀 폭에 맞춘다 — 모바일에서 배지가 서로 겹쳐 지저분해 보이던 문제]
+// 예전엔 화면 폭과 무관하게 항상 16칸으로 나눴다. 데스크톱(약 1440px 지도 폭)에서는 칸 하나가
+// 90px쯤이라 가장 큰 배지(60px)도 여유 있게 들어가지만, 모바일(약 390px)에서는 칸 하나가
+// 24px밖에 안 돼 가장 작은 배지(34px)보다도 좁다 — 옆 칸에 뭐가 있든 배지끼리 반드시 겹친다.
+// 대표가 스크린샷으로 신고한 "지저분하고 촘촘한" 화면이 정확히 이 상태였다. 절대 칸 수 대신
+// 배지 하나가 편하게 들어갈 목표 폭(가장 큰 배지+여백)을 기준으로 칸 수를 거꾸로 계산해서,
+// 화면이 좁을수록 칸도 자동으로 줄어들게(=칸이 넓어지게) 한다.
+const CLUSTER_CELL_TARGET_PX = 76; // 가장 큰 배지(60px) + 여백
+function clusterColsForWidth(widthPx: number): number {
+  return Math.max(4, Math.min(20, Math.round(widthPx / CLUSTER_CELL_TARGET_PX)));
+}
+
 // 현재 화면 범위를 cols×cols 격자로 나눠 장소를 칸별로 묶는다. 격자 칸 수를 화면 범위에
 // 비례해 정하므로(절대 위경도 크기로 고정하지 않으므로), 확대 정도와 무관하게 뱃지 개수가
 // 비슷한 수준으로 유지된다.
 function computeClusterBuckets(
   places: Place[],
   bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number },
-  cols = 16
+  cols: number
 ): ClusterBucket[] {
   const spanLat = Math.max(bounds.maxLat - bounds.minLat, 1e-6);
   const spanLng = Math.max(bounds.maxLng - bounds.minLng, 1e-6);
@@ -761,12 +773,17 @@ export default function MapCanvas({
       const bounds = map.getBounds();
       const sw = bounds.getSouthWest();
       const ne = bounds.getNorthEast();
-      const buckets = computeClusterBuckets(places, {
-        minLat: sw.getLat(),
-        maxLat: ne.getLat(),
-        minLng: sw.getLng(),
-        maxLng: ne.getLng(),
-      });
+      const cols = clusterColsForWidth(mapDivRef.current?.clientWidth || 800);
+      const buckets = computeClusterBuckets(
+        places,
+        {
+          minLat: sw.getLat(),
+          maxLat: ne.getLat(),
+          minLng: sw.getLng(),
+          maxLng: ne.getLng(),
+        },
+        cols
+      );
       syntheticClusterRef.current = buckets.map((bucket) => {
         const content = clusterBadgeElement(bucket.count);
         const position = new kakao.maps.LatLng(bucket.lat, bucket.lng);
