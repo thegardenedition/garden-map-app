@@ -41,6 +41,23 @@ declare global {
 const SEOUL_METRO = { lat: 37.49, lng: 127.02, level: 9 };
 
 /*
+ * [핀치 확대·축소가 안 되던 문제 — "데스크톱"과 "손가락 없음"을 같은 값으로 썼다]
+ * `useIsDesktop()`은 순전히 화면 너비(860px)만 보는 레이아웃 기준이다. 그런데 이 컴포넌트는
+ * 그 값을 그대로 "그러니까 손가락이 아니라 마우스"라는 뜻으로도 재사용해 `map.setZoomable
+ * (!isDesktop)`을 걸었다 — 폭이 860px 이상이면 카카오의 기본 핀치 줌 자체를 꺼 버리고,
+ * 마우스 휠은 Ctrl을 눌러야만 확대되게 막는다(위 [제스처 충돌 방지] 참고).
+ *
+ * 태블릿(가로 모드 포함)이나 큰 폰을 가로로 눕히면 너비가 860px을 쉽게 넘는데, 그런 기기도
+ * 화면 크기만으로 "데스크톱"으로 분류되어 핀치 줌이 통째로 꺼져 있었다 — 손가락으로 확대·
+ * 축소해도 "전혀 움직이지 않는" 것처럼 보인 원인이다. 레이아웃 기준(너비)과 입력 방식(손가락
+ * 유무)은 서로 다른 질문이라 따로 물어야 한다.
+ */
+function isTouchCapable(): boolean {
+  if (typeof window === "undefined") return false;
+  return navigator.maxTouchPoints > 0 || window.matchMedia("(pointer: coarse)").matches;
+}
+
+/*
  * [핀 이미지]
  * 도형·색·아이콘은 전부 lib/icons.tsx 가 갖고 있고 여기서는 그걸 카카오 MarkerImage 로만 감싼다.
  * 지도·필터 칩·목록·상세가 같은 그림을 쓰게 하려면 정의가 한 곳에만 있어야 한다.
@@ -359,6 +376,10 @@ export default function MapCanvas({
   const hoverLiftImgRef = useRef<HTMLImageElement | null>(null);
   const scriptLoadedRef = useRef(false);
   const isDesktopRef = useRef(isDesktop);
+  // [핀치 줌 게이트] 실행 시점에 한 번만 확인하면 된다 — 기기의 입력 방식이 세션 중에
+  // 바뀌지는 않는다. 아래 setZoomable 호출들이 "데스크톱 레이아웃이면서 동시에 손가락도
+  // 없을 때"만 카카오 핀치 줌을 끄도록, isDesktopRef와 별도로 들고 있는다.
+  const hasTouchRef = useRef(false);
   const zoomControlRef = useRef<any>(null);
   const onUserPanRef = useRef(onUserPan);
   const onViewportChangeRef = useRef(onViewportChange);
@@ -378,6 +399,10 @@ export default function MapCanvas({
   useEffect(() => {
     isDesktopRef.current = isDesktop;
   }, [isDesktop]);
+
+  useEffect(() => {
+    hasTouchRef.current = isTouchCapable();
+  }, []);
 
   useEffect(() => {
     onUserPanRef.current = onUserPan;
@@ -426,10 +451,12 @@ export default function MapCanvas({
 
   // [제스처 충돌 방지] 데스크탑에서만 Kakao 기본 줌을 끄고, Ctrl+스크롤일 때만 우리가 직접 확대/축소한다.
   // 맨 스크롤(Ctrl 없이)은 막아서 페이지가 튀지 않게 하고, 대신 안내 힌트를 잠깐 보여준다.
+  // 단, 손가락이 있는 기기(가로 모드 태블릿 등, 너비만으로는 데스크톱으로 잡힘)라면 이
+  // "데스크톱" 분류와 무관하게 핀치 줌은 항상 켜 둔다 — 위 isTouchCapable 설명 참고.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.setZoomable(!isDesktop);
+    map.setZoomable(!isDesktop || hasTouchRef.current);
 
     // 폭이 860px 경계를 넘나들면 줌 컨트롤도 따라와야 한다. 지도 생성 시점에 한 번만 붙이면
     // 데스크톱에서 창을 좁혔을 때 컨트롤이 남아 칩 줄과 겹친 채로 있는다.
@@ -507,7 +534,7 @@ export default function MapCanvas({
         // 모바일은 화면이 좁고 하단 시트가 3분의 1을 덮으므로 한 단계 더 넓게 잡는다.
         map.setLevel(onDesktop ? SEOUL_METRO.level : SEOUL_METRO.level + 1);
         map.setCenter(new kakao.maps.LatLng(SEOUL_METRO.lat, SEOUL_METRO.lng));
-        map.setZoomable(!isDesktopRef.current);
+        map.setZoomable(!isDesktopRef.current || hasTouchRef.current);
         mapRef.current = map;
         setZoomLevel(map.getLevel());
 
@@ -999,7 +1026,13 @@ export default function MapCanvas({
         '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><circle cx="11" cy="11" r="8" fill="%23E1FC48" stroke="%23fff" stroke-width="3"/></svg>';
       userMarkerRef.current = new kakao.maps.Marker({
         position: loc,
-        image: new kakao.maps.MarkerImage("data:image/svg+xml;charset=UTF-8," + dotSvg, new kakao.maps.Size(22, 22)),
+        // [내 위치 핀이 실제 좌표에서 벗어나 보이던 문제] offset을 안 주면 카카오는 이미지의
+        // 아래 가운데(width/2, height)를 좌표에 맞춘다 — 뾰족한 핀 모양엔 맞는 기본값이지만,
+        // 이 점은 원 도형이라 중심(11,11)이 좌표와 일치해야 한다. offset이 없어서 원 전체가
+        // 실제 위치보다 반지름만큼(11px) 위로 밀려 찍히고 있었다.
+        image: new kakao.maps.MarkerImage("data:image/svg+xml;charset=UTF-8," + dotSvg, new kakao.maps.Size(22, 22), {
+          offset: new kakao.maps.Point(11, 11),
+        }),
       });
       userMarkerRef.current.setMap(map);
       return;
