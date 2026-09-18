@@ -410,8 +410,6 @@ export default function MapCanvas({
   const onPrefetchPlaceRef = useRef(onPrefetchPlace);
   const hintRef = useRef<HTMLDivElement | null>(null);
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // [선택 핀 시트 회피 보정 타이머] 아래 "선택된 장소" effect 참고.
-  const selectedPinAdjustTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // [방금 실제로 애니메이션을 태운 선택] 아래 "선택된 장소" effect 참고 — places가 갱신될
   // 때마다(뷰포트 재조회 등) 같은 장소를 다시 "선택"한 것처럼 애니메이션이 재생되는 것을 막는다.
   const lastAnimatedSelectionRef = useRef<string | null>(null);
@@ -723,7 +721,6 @@ export default function MapCanvas({
       if (searchCircleRef.current) searchCircleRef.current.setMap(null);
       if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
       if (hoverOverlayRef.current) hoverOverlayRef.current.setMap(null);
-      if (selectedPinAdjustTimerRef.current) clearTimeout(selectedPinAdjustTimerRef.current);
       syntheticClusterRef.current.forEach((o) => o.setMap(null));
       syntheticClusterRef.current = [];
       projectMarkersRef.current.forEach((m) => m.setMap(null));
@@ -1092,10 +1089,6 @@ export default function MapCanvas({
     if (!kakao?.maps || !map) return;
 
     if (!selectedPlaceId) {
-      if (selectedPinAdjustTimerRef.current) {
-        clearTimeout(selectedPinAdjustTimerRef.current);
-        selectedPinAdjustTimerRef.current = null;
-      }
       lastAnimatedSelectionRef.current = null;
       if (isolatedMarkerRef.current) {
         isolatedMarkerRef.current.setMap(null);
@@ -1128,12 +1121,7 @@ export default function MapCanvas({
       return;
     }
 
-    // 여기부터는 진짜 새 선택이다 — 지난 선택에서 걸어 둔 시트 회피 보정이 이제는 다른
-    // 장소를 대상으로 뒤늦게 실행되지 않도록 먼저 취소한다.
-    if (selectedPinAdjustTimerRef.current) {
-      clearTimeout(selectedPinAdjustTimerRef.current);
-      selectedPinAdjustTimerRef.current = null;
-    }
+    // 여기부터는 진짜 새 선택이다.
     lastAnimatedSelectionRef.current = selectedPlaceId;
 
     if (isolatedMarkerRef.current) {
@@ -1181,36 +1169,46 @@ export default function MapCanvas({
     });
     overlay.setMap(map);
     isolatedMarkerRef.current = overlay;
-    map.setLevel(4, { animate: true });
-    map.panTo(new kakao.maps.LatLng(place.coordinates[1], place.coordinates[0]));
 
     /*
-     * [모바일: 시트가 가린 만큼 위로 밀어 올린다]
-     * 위 panTo는 핀을 지도 "전체" 높이의 정중앙에 놓는다. 그런데 장소를 선택하면 시트가
-     * peek(화면의 30%, SELECTED_PIN_SHEET_VH)로 열려 화면 아래를 덮으므로, 실제로 "보이는"
-     * 영역의 중앙은 그보다 위쪽이다 — 지금까지는 이 차이를 안 따져서 핀이 시트 경계에
-     * 거의 붙어 찍혔다.
+     * [지도가 두 번 움직이는 것처럼 보이던 문제 — 2026-09-19]
+     * 처음엔 setLevel(4)+panTo로 정중앙까지 날아간 뒤, 350ms를 기다렸다가 시트를 피해
+     * 한 번 더 panTo하는 "2단계"로 만들었다. 확대·이동 애니메이션이 끝나기 전에 픽셀
+     * 좌표를 구하면 아직 예전 축척일 수 있어서였는데, 실제로 써 보니 "확대되며 날아가서
+     * 멈췄다가 → 다시 위로 슬쩍 밀리는" 두 번의 움직임으로 보여 부자연스러웠다.
      *
-     * 카카오 setLevel(animate:true)의 확대 애니메이션이 끝나기 전에 프로젝션을 읽으면
-     * 아직 예전 축척으로 계산될 수 있어, 애니메이션이 끝났을 시간(카카오 기본 전환 시간
-     * 기준 여유 있게 잡은 값)만큼 기다렸다가 프로젝션으로 "화면 픽셀 기준" 목표 지점을
-     * 구해 한 번 더 살짝 이동한다 — 좌표 계산이 아니라 픽셀 계산이라 줌 레벨과 무관하게
-     * 항상 시트 높이의 절반만큼 위로 옮겨진다.
+     * 그래서 애니메이션을 아예 시작하기 전에 "만약 지금 당장 레벨 4·이 좌표로 이동한다면
+     * 화면 픽셀이 어떻게 되는가"를 먼저 계산해 최종 목표 좌표 자체를 시트 높이의 절반만큼
+     * 보정한 뒤, 그 보정된 좌표 하나로만 애니메이션을 시작한다 — 눈에 보이는 움직임은
+     * 처음부터 끝까지 한 번뿐이다.
+     *
+     * 계산 자체는 지도를 실제로 레벨 4·목표 좌표로 순간이동(애니메이션 없이 setLevel/
+     * setCenter)시켜 프로젝션을 읽고, 곧바로 원래 있던 자리로 되돌리는 방식이다 — 이
+     * 세 번의 호출은 전부 같은 동기 코드 블록 안에서 끝나 브라우저가 그 사이를 그릴 틈이
+     * 없으므로(중간 상태가 페인트되지 않으므로) 화면에는 아무 것도 보이지 않는다. 그 뒤에
+     * 이어지는 setLevel(animate:true)+panTo가 유일하게 눈에 보이는, 하나로 이어진 동작이다.
      */
+    let target = new kakao.maps.LatLng(place.coordinates[1], place.coordinates[0]);
     if (!isDesktopRef.current) {
-      selectedPinAdjustTimerRef.current = setTimeout(() => {
-        selectedPinAdjustTimerRef.current = null;
-        const h = mapDivRef.current?.clientHeight;
-        if (!h) return;
+      const h = mapDivRef.current?.clientHeight;
+      if (h) {
+        const prevCenter = map.getCenter();
+        const prevLevel = map.getLevel();
+        map.setLevel(4);
+        map.setCenter(target);
         const proj = map.getProjection();
-        if (!proj) return;
-        const centerPoint = proj.containerPointFromCoords(map.getCenter());
-        const shifted = proj.coordsFromContainerPoint(
-          new kakao.maps.Point(centerPoint.x, centerPoint.y + (h * SELECTED_PIN_SHEET_VH) / 2)
-        );
-        map.panTo(shifted);
-      }, 350);
+        if (proj) {
+          const centerPoint = proj.containerPointFromCoords(map.getCenter());
+          target = proj.coordsFromContainerPoint(
+            new kakao.maps.Point(centerPoint.x, centerPoint.y + (h * SELECTED_PIN_SHEET_VH) / 2)
+          );
+        }
+        map.setLevel(prevLevel);
+        map.setCenter(prevCenter);
+      }
     }
+    map.setLevel(4, { animate: true });
+    map.panTo(target);
   }, [selectedPlaceId, places]);
 
   return (
