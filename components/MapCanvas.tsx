@@ -40,6 +40,13 @@ declare global {
 // 바로 실제 결과를 보여줄 수 있다. 사용자가 다른 지역을 보려면 축소하거나 지역 필터를 쓰면 된다.
 const SEOUL_METRO = { lat: 37.49, lng: 127.02, level: 9 };
 
+// [선택한 핀이 바텀시트 경계에 붙어 보이던 문제] app/page.tsx가 장소를 선택하면
+// <BottomSheet snap={selectedPlaceId ? "peek" : sheetSnap} .../> 로 시트를 강제로 "peek"
+// 스냅으로 연다. BottomSheet.tsx의 SNAP_VH.peek 값(화면 높이의 30%)과 반드시 같아야 한다 —
+// 두 파일이 서로 다른 곳에서 같은 값을 들고 있어 어긋날 위험이 있지만, 시트 코드를 이
+// 컴포넌트가 import하지 않아 DOM을 직접 재는 쪽보다 이 편이 더 단순하다고 판단했다.
+const SELECTED_PIN_SHEET_VH = 0.3;
+
 /*
  * [핀치 확대·축소가 안 되던 문제 — "데스크톱"과 "손가락 없음"을 같은 값으로 썼다]
  * `useIsDesktop()`은 순전히 화면 너비(860px)만 보는 레이아웃 기준이다. 그런데 이 컴포넌트는
@@ -391,6 +398,8 @@ export default function MapCanvas({
   const onPrefetchPlaceRef = useRef(onPrefetchPlace);
   const hintRef = useRef<HTMLDivElement | null>(null);
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // [선택 핀 시트 회피 보정 타이머] 아래 "선택된 장소" effect 참고.
+  const selectedPinAdjustTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // [합성 클러스터 전환 판단용] ref는 값이 바뀌어도 아래 마커 렌더링 effect를 다시 돌리지
   // 못한다(그 effect는 places/isDesktop 변경에만 반응했다) — 레벨 8 경계를 넘나드는 순간을
   // 놓치지 않으려면 state로도 들고 있어야 한다.
@@ -699,6 +708,7 @@ export default function MapCanvas({
       if (searchCircleRef.current) searchCircleRef.current.setMap(null);
       if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
       if (hoverOverlayRef.current) hoverOverlayRef.current.setMap(null);
+      if (selectedPinAdjustTimerRef.current) clearTimeout(selectedPinAdjustTimerRef.current);
       syntheticClusterRef.current.forEach((o) => o.setMap(null));
       syntheticClusterRef.current = [];
       projectMarkersRef.current.forEach((m) => m.setMap(null));
@@ -1049,6 +1059,12 @@ export default function MapCanvas({
     const kakao = window.kakao;
     const map = mapRef.current;
     const clusterer = clustererRef.current;
+    // 새 선택이 시작되면 지난 선택에서 걸어 둔 시트 회피 보정이 이제는 다른 장소를
+    // 대상으로 뒤늦게 실행되지 않도록 먼저 취소한다.
+    if (selectedPinAdjustTimerRef.current) {
+      clearTimeout(selectedPinAdjustTimerRef.current);
+      selectedPinAdjustTimerRef.current = null;
+    }
     if (!kakao?.maps || !map) return;
 
     if (isolatedMarkerRef.current) {
@@ -1107,6 +1123,34 @@ export default function MapCanvas({
     isolatedMarkerRef.current = overlay;
     map.setLevel(4, { animate: true });
     map.panTo(new kakao.maps.LatLng(place.coordinates[1], place.coordinates[0]));
+
+    /*
+     * [모바일: 시트가 가린 만큼 위로 밀어 올린다]
+     * 위 panTo는 핀을 지도 "전체" 높이의 정중앙에 놓는다. 그런데 장소를 선택하면 시트가
+     * peek(화면의 30%, SELECTED_PIN_SHEET_VH)로 열려 화면 아래를 덮으므로, 실제로 "보이는"
+     * 영역의 중앙은 그보다 위쪽이다 — 지금까지는 이 차이를 안 따져서 핀이 시트 경계에
+     * 거의 붙어 찍혔다.
+     *
+     * 카카오 setLevel(animate:true)의 확대 애니메이션이 끝나기 전에 프로젝션을 읽으면
+     * 아직 예전 축척으로 계산될 수 있어, 애니메이션이 끝났을 시간(카카오 기본 전환 시간
+     * 기준 여유 있게 잡은 값)만큼 기다렸다가 프로젝션으로 "화면 픽셀 기준" 목표 지점을
+     * 구해 한 번 더 살짝 이동한다 — 좌표 계산이 아니라 픽셀 계산이라 줌 레벨과 무관하게
+     * 항상 시트 높이의 절반만큼 위로 옮겨진다.
+     */
+    if (!isDesktopRef.current) {
+      selectedPinAdjustTimerRef.current = setTimeout(() => {
+        selectedPinAdjustTimerRef.current = null;
+        const h = mapDivRef.current?.clientHeight;
+        if (!h) return;
+        const proj = map.getProjection();
+        if (!proj) return;
+        const centerPoint = proj.containerPointFromCoords(map.getCenter());
+        const shifted = proj.coordsFromContainerPoint(
+          new kakao.maps.Point(centerPoint.x, centerPoint.y + (h * SELECTED_PIN_SHEET_VH) / 2)
+        );
+        map.panTo(shifted);
+      }, 350);
+    }
   }, [selectedPlaceId, places]);
 
   return (
