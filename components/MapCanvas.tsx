@@ -400,6 +400,9 @@ export default function MapCanvas({
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // [선택 핀 시트 회피 보정 타이머] 아래 "선택된 장소" effect 참고.
   const selectedPinAdjustTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // [방금 실제로 애니메이션을 태운 선택] 아래 "선택된 장소" effect 참고 — places가 갱신될
+  // 때마다(뷰포트 재조회 등) 같은 장소를 다시 "선택"한 것처럼 애니메이션이 재생되는 것을 막는다.
+  const lastAnimatedSelectionRef = useRef<string | null>(null);
   // [합성 클러스터 전환 판단용] ref는 값이 바뀌어도 아래 마커 렌더링 effect를 다시 돌리지
   // 못한다(그 effect는 places/isDesktop 변경에만 반응했다) — 레벨 8 경계를 넘나드는 순간을
   // 놓치지 않으려면 state로도 들고 있어야 한다.
@@ -842,8 +845,17 @@ export default function MapCanvas({
         onSelectPlaceRef.current(current.placeId);
         onPrefetchPlaceRef.current?.(current);
       });
-      if (isDesktop) {
+      {
+        // [isDesktop이 나중에 바뀌면 이미 만들어진 마커는 호버가 안 붙어 있었다]
+        // 예전엔 `if (isDesktop)`으로 감싸 마커를 "만드는 시점"의 값으로 리스너를 붙일지
+        // 말지 정했다. 이 effect는 isDesktop이 바뀌면 다시 돌긴 하지만, 이미 존재하는
+        // 마커는 위에서 `continue`로 건너뛰므로 리스너를 다시 붙일 기회가 없다 — 예를
+        // 들어 모바일로 처음 만들어진 마커는, 나중에 창을 넓혀 데스크톱이 되어도 영원히
+        // 호버에 반응하지 않았다. 리스너는 항상 붙이고, 데스크톱인지는 이벤트가 실제로
+        // 일어난 "그 순간" isDesktopRef.current로 판단한다 — 그러면 언제 만들어진
+        // 마커든 지금 상태를 정확히 따른다.
         kakao.maps.event.addListener(marker, "mouseover", () => {
+          if (!isDesktopRef.current) return;
           if (hoverHideTimerRef.current) {
             clearTimeout(hoverHideTimerRef.current);
             hoverHideTimerRef.current = null;
@@ -891,6 +903,7 @@ export default function MapCanvas({
           }
         });
         kakao.maps.event.addListener(marker, "mouseout", () => {
+          if (!isDesktopRef.current) return;
           // 곧바로 지우지 않고 짧게 미룬다 — 이 사이 같은 핀에 mouseover가 다시 오면(위
           // 핸들러가) 이 타이머를 취소해서 화면이 흔들리지 않는다. 진짜로 마우스가 다른
           // 곳으로 떠난 경우에만 아래가 실행되어 툴팁이 사라지고 핀도 원래 크기로 돌아간다.
@@ -924,7 +937,7 @@ export default function MapCanvas({
       animateMarkerFrames(kakao, marker, place, currentPinSize, POP_IN_FRAMES, markerAnimJobRef.current, placeId, 30);
     }
     if (toAdd.length) clusterer.addMarkers(toAdd);
-  }, [places, isDesktop, zoomLevel]);
+  }, [places, zoomLevel]);
 
   // [프로젝트 연동] 검색/필터와 무관하게 항상 떠 있는 별도 레이어. 클러스터러에는 섞지 않고
   // (개수가 적고 항상 눈에 띄어야 하므로) 별도 마커로 직접 얹는다. 클릭하면 이 지도 앱의
@@ -1059,19 +1072,18 @@ export default function MapCanvas({
     const kakao = window.kakao;
     const map = mapRef.current;
     const clusterer = clustererRef.current;
-    // 새 선택이 시작되면 지난 선택에서 걸어 둔 시트 회피 보정이 이제는 다른 장소를
-    // 대상으로 뒤늦게 실행되지 않도록 먼저 취소한다.
-    if (selectedPinAdjustTimerRef.current) {
-      clearTimeout(selectedPinAdjustTimerRef.current);
-      selectedPinAdjustTimerRef.current = null;
-    }
     if (!kakao?.maps || !map) return;
 
-    if (isolatedMarkerRef.current) {
-      isolatedMarkerRef.current.setMap(null);
-      isolatedMarkerRef.current = null;
-    }
     if (!selectedPlaceId) {
+      if (selectedPinAdjustTimerRef.current) {
+        clearTimeout(selectedPinAdjustTimerRef.current);
+        selectedPinAdjustTimerRef.current = null;
+      }
+      lastAnimatedSelectionRef.current = null;
+      if (isolatedMarkerRef.current) {
+        isolatedMarkerRef.current.setMap(null);
+        isolatedMarkerRef.current = null;
+      }
       if (clusterer) {
         clusterer.clear();
         clusterer.addMarkers(Object.values(markersRef.current));
@@ -1079,7 +1091,38 @@ export default function MapCanvas({
       return;
     }
     const place = places.find((p) => p.placeId === selectedPlaceId);
-    if (!place) return;
+    if (!place) return; // places가 아직 이 장소를 안 갖고 있다 — 다음 places 갱신 때 재시도(deps 참고)
+
+    /*
+     * [places 갱신마다 재생되던 문제 — 2026-09-19 정밀진단]
+     * 이 effect의 deps에 있는 `places`는 뷰포트 재조회·필터 등으로 사용자가 아무것도
+     * 하지 않아도 자주 새 배열로 바뀐다(place 조회를 위해 필요한 값이라 deps에서 뺄 수는
+     * 없다 — 아래 참고). 그런데 같은 selectedPlaceId를 대상으로 매번 아래 전체를 다시
+     * 실행하면, 고립 마커를 지웠다 다시 만들어 드롭+바운스 애니메이션이 재생되고,
+     * setLevel+panTo로 지도가 다시 확대·이동하며, 시트 회피 보정까지 다시 걸렸다 —
+     * 사용자는 가만히 있는데 지도가 제멋대로 다시 튀고 핀이 다시 튀어오르는 것처럼
+     * 보였다. "이미 이 selectedPlaceId로 애니메이션을 마쳤다"는 사실을 따로 기억해 뒀다가
+     * (lastAnimatedSelectionRef), 그 값과 같고 고립 마커도 이미 떠 있다면(진짜 최초
+     * 렌더는 아니라면) 여기서 멈춘다 — places가 이제 막 이 장소를 처음 찾아낸 경우(딥링크
+     * 등, 위 lookup 실패로 여러 번 재시도되다 방금 성공)에는 조건이 거짓이라 정상적으로
+     * 아래 애니메이션이 한 번은 실행된다.
+     */
+    if (lastAnimatedSelectionRef.current === selectedPlaceId && isolatedMarkerRef.current) {
+      return;
+    }
+
+    // 여기부터는 진짜 새 선택이다 — 지난 선택에서 걸어 둔 시트 회피 보정이 이제는 다른
+    // 장소를 대상으로 뒤늦게 실행되지 않도록 먼저 취소한다.
+    if (selectedPinAdjustTimerRef.current) {
+      clearTimeout(selectedPinAdjustTimerRef.current);
+      selectedPinAdjustTimerRef.current = null;
+    }
+    lastAnimatedSelectionRef.current = selectedPlaceId;
+
+    if (isolatedMarkerRef.current) {
+      isolatedMarkerRef.current.setMap(null);
+      isolatedMarkerRef.current = null;
+    }
 
     // 합성 클러스터 모드 중에 장소를 선택하면(예: 목록에서 바로 클릭) 곧 레벨 4로 확대되며
     // 원래 방식으로 돌아가지만, 그 전환이 끝나기 전 잠깐 뱃지가 고립 마커와 함께 남을 수
