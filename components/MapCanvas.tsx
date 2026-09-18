@@ -786,16 +786,21 @@ export default function MapCanvas({
       });
       if (isDesktop) {
         kakao.maps.event.addListener(marker, "mouseover", () => {
-          // [호버 시 핀이 떨리는 문제 — 2026-09-16]
+          // [호버 시 핀이 떨리는 문제 — 2026-09-16 수정, 2026-09-18 보강]
           // 예전엔 mouseout에서 리프트 되돌리기(HOVER_DROP_FRAMES)를 곧바로 실행했다. 그런데
           // setImage()로 마커 이미지를 몇 단계 다른 크기로 갈아 끼우는 동안 커서 아래 요소가
           // 바뀌면서 브라우저가 mouseout/mouseover를 다시 쏠 수 있고(호버 툴팁 깜빡임과 같은
           // 근본 원인), 그때마다 "당겨 내리기 시작 → 곧바로 취소하지만 이미 한 프레임 내려간
           // 채로 다시 올리기" 가 반복되면 핀이 커졌다 작아졌다 떨리는 것처럼 보였다.
-          // 되돌리기는 아래 mouseout에서 툴팁과 같은 80ms 유예를 거친 뒤에만 시작하게 옮기고,
-          // 대신 리프트는 (이미 켜져 있어도) 매번 다시 걸어 되풀이 상황에서도 항상 "켜진 상태"로
-          // 수렴하게 한다 — animateMarkerFrames의 job 토큰이 오래된 되돌리기 프레임을 알아서
-          // 무효화한다.
+          // 되돌리기는 아래 mouseout에서 툴팁과 같은 80ms 유예를 거친 뒤에만 시작하게 옮겼다.
+          //
+          // [09-18 보강] 그런데 mouseover 쪽은 여전히 "이미 켜져 있어도 매번 리프트를 다시
+          // 건다"고 되어 있었다 — animateMarkerFrames는 항상 HOVER_LIFT_FRAMES[0](1.06배)부터
+          // 다시 시작하므로, 이미 1.15배까지 커진 핀에 같은 원인(이미지 교체 → 히트테스트
+          // 재계산)으로 mouseover가 실제로 떠나지 않았는데도 다시 쏘이면 1.15 → 1.06 → 1.15로
+          // 순간 작아졌다 커지는 게 반복되어 여전히 떨려 보였다. 툴팁을 새로 만들 때(=진짜로
+          // 이 핀에 처음 들어온 순간)만 리프트도 같이 걸도록 묶어서, 이미 호버 중인 핀에 대한
+          // 되풀이 mouseover는 유예 타이머만 취소할 뿐 리프트를 다시 시작하지 않게 한다.
           if (hoverHideTimerRef.current) {
             clearTimeout(hoverHideTimerRef.current);
             hoverHideTimerRef.current = null;
@@ -812,10 +817,12 @@ export default function MapCanvas({
             });
             hoverOverlayRef.current.setMap(map);
             hoveredPlaceIdRef.current = placeId;
+            // [호버 리프트] 툴팁만으로는 "지금 이걸 가리키고 있다"는 확인이 약하다. 핀 자체를
+            // 살짝 키워 데스크톱 카카오맵 자체의 POI 호버 반응과 같은 언어를 쓴다. 진짜로 이
+            // 핀에 처음 들어온 순간에만 걸어야 한다 — 이미 켜진 채로 반복되는 mouseover에도
+            // 매번 걸면 위 설명대로 떨림이 재발한다.
+            animateMarkerFrames(kakao, marker, current, pinSizeRef.current, HOVER_LIFT_FRAMES, markerAnimJobRef.current, placeId, 45);
           }
-          // [호버 리프트] 툴팁만으로는 "지금 이걸 가리키고 있다"는 확인이 약하다. 핀 자체를
-          // 살짝 키워 데스크톱 카카오맵 자체의 POI 호버 반응과 같은 언어를 쓴다.
-          animateMarkerFrames(kakao, marker, current, pinSizeRef.current, HOVER_LIFT_FRAMES, markerAnimJobRef.current, placeId, 45);
         });
         kakao.maps.event.addListener(marker, "mouseout", () => {
           // 곧바로 지우지 않고 짧게 미룬다 — 이 사이 같은 핀에 mouseover가 다시 오면(위
