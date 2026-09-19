@@ -21,6 +21,29 @@
   --color-white: #FFFFFF;
   --color-muted: #A9B0E8;
   --color-danger: #FF6B6B;
+
+  /*
+   * [지도 화면 z-index — 한 곳에서 관리, 2026-09-19]
+   * 값 자체는 전부 이전과 동일하다(스택 순서 변경 없음) — 여러 파일(app/page.tsx,
+   * MapCanvas.tsx, BottomSheet.tsx, PlaceDetailSheet.tsx, Sidebar.tsx)에 숫자로만
+   * 흩어져 있던 것을 이름 붙여 한 곳에 모았다. 지난번 "상세 시트 배경이 지도 전체를
+   * 가리던" 버그([[garden-map-detail-sheet-blocked-map]])가 이렇게 흩어진 숫자만
+   * 보고 판단하다 생긴 사고였다 — 새 레이어를 추가할 때는 이 목록에서 어디에 끼워
+   * 넣을지부터 정할 것. 아래로 갈수록 위에 쌓인다.
+   *
+   * 카카오 지도 내부 오버레이(클러스터 배지·호버·선택 핀)의 zIndex는 이 스택과
+   * 별개다(카카오가 지도 컨테이너 안에서 독립적으로 관리) — 그쪽은
+   * components/MapCanvas.tsx의 MAP_OVERLAY_Z를 참고할 것.
+   */
+  --z-desktop-sidebar: 20;       /* 데스크톱 고정 사이드바 (Sidebar.tsx) */
+  --z-mobile-topstack: 20;       /* 모바일 검색바+필터 스택 (app/page.tsx) — 데스크톱/모바일은 배타적이라 사이드바와 값이 겹쳐도 무관 */
+  --z-mobile-ui-toggle: 21;      /* "지도만 보기" 토글 버튼 (app/page.tsx) */
+  --z-mobile-float-actions: 25;  /* 모바일 "이 근처에서 찾기"/"지도 탐색으로" 버튼 (app/page.tsx) */
+  --z-desktop-float-actions: 30; /* 데스크톱 "이 근처에서 찾기"/"현재 위치" 버튼 (app/page.tsx) */
+  --z-bottom-sheet: 40;          /* 목록 바텀시트 (BottomSheet.tsx) */
+  --z-desktop-hint: 45;          /* "Ctrl+스크롤로 확대" 안내 (MapCanvas.tsx) */
+  --z-modal-backdrop: 70;        /* 상세 시트 딤 배경, pointer-events:none (PlaceDetailSheet.tsx) */
+  --z-modal-sheet: 80;           /* 상세 시트 본체 (PlaceDetailSheet.tsx) */
 }
 
 @theme inline {
