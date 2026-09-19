@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import { GROUP_LABEL, SUB_DEFS, type GroupId } from "@/lib/types";
 import { CategoryIcon, GROUP_COLOR } from "@/lib/icons";
 import { useGardenMapStore } from "@/lib/store";
@@ -19,6 +20,13 @@ const GROUP_ORDER: GroupId[] = ["company", "material", "park"];
  *  5. 칩의 아이콘에 그룹 색을 입혀 지도 핀과 같은 색으로 읽히게 했다 — 칩과 핀이 같은 체계다.
  */
 
+// [슬라이딩 하이라이트 — 2026-09-19] 예전엔 활성 칩 배경이 흰색↔네온옐로우로 순간 전환됐다.
+// layoutId 공유 배경을 활성 칩 안에서만 조건부로 그리면, 선택이 다른 칩으로 옮겨갈 때 Framer
+// Motion이 이전 위치·크기에서 새 위치·크기로 알아서 FLIP 애니메이션을 태운다(세그먼트 컨트롤
+// 느낌). 바탕은 항상 흰색/딥블루로 깔아 두고 그 위에 하이라이트를 얹으므로, 값 자체(대분류
+// 선택 로직·보이는 최종 색)는 그대로다 — 전환 방식만 바뀐다.
+const CHIP_HIGHLIGHT_TRANSITION = { type: "spring" as const, damping: 26, stiffness: 380 };
+
 function GroupChip({
   group,
   active,
@@ -34,14 +42,19 @@ function GroupChip({
     <button
       onClick={onClick}
       aria-pressed={active}
-      className={[
-        "tp-caption flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-2",
-        "shadow-[0_2px_8px_rgba(0,0,0,0.18)]",
-        active ? "bg-[var(--color-neon-yellow)] text-[var(--color-deep-blue)]" : "bg-white text-[var(--color-deep-blue)]",
-      ].join(" ")}
+      className="tp-caption relative flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3 py-2 text-[var(--color-deep-blue)] shadow-[0_2px_8px_rgba(0,0,0,0.18)]"
     >
-      {group && <CategoryIcon group={group} size={14} color={GROUP_COLOR[group]} />}
-      {children}
+      {active && (
+        <motion.div
+          layoutId="groupChipHighlight"
+          className="absolute inset-0 rounded-full bg-[var(--color-neon-yellow)]"
+          transition={CHIP_HIGHLIGHT_TRANSITION}
+        />
+      )}
+      <span className="relative z-10 flex items-center gap-1.5">
+        {group && <CategoryIcon group={group} size={14} color={GROUP_COLOR[group]} />}
+        {children}
+      </span>
     </button>
   );
 }
@@ -64,14 +77,25 @@ function SubChip({
       onClick={onClick}
       aria-pressed={active}
       className={[
-        "flex flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[11.5px] font-semibold",
-        active
-          ? "bg-[var(--color-neon-yellow)] text-[var(--color-deep-blue)]"
-          : "bg-[var(--color-deep-blue)] text-white ring-1 ring-inset ring-white/25",
+        "relative flex flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-[var(--color-deep-blue)] px-2.5 py-1.5 text-[11.5px] font-semibold",
+        active ? "" : "ring-1 ring-inset ring-white/25",
       ].join(" ")}
     >
-      {sub && <CategoryIcon group={group} sub={sub} size={13} color={active ? GROUP_COLOR[group] : undefined} />}
-      {children}
+      {active && (
+        <motion.div
+          layoutId="subChipHighlight"
+          className="absolute inset-0 rounded-full bg-[var(--color-neon-yellow)]"
+          transition={CHIP_HIGHLIGHT_TRANSITION}
+        />
+      )}
+      <span
+        className={`relative z-10 flex items-center gap-1 transition-colors duration-200 ${
+          active ? "text-[var(--color-deep-blue)]" : "text-white"
+        }`}
+      >
+        {sub && <CategoryIcon group={group} sub={sub} size={13} color={active ? GROUP_COLOR[group] : undefined} />}
+        {children}
+      </span>
     </button>
   );
 }
