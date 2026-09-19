@@ -23,6 +23,18 @@
   --color-danger: #FF6B6B;
 
   /*
+   * [매거진그린 브랜드 토큰 — 2026-09-19, CLAUDE.md 3절]
+   * 지도 앱 전체 색(딥블루/네온옐로우)은 W9~W10(11-09~22)에 이 톤으로 통일 예정 — 그 전까지는
+   * 기존 화면을 건드리지 않고, 새로 만드는 UI 요소(예: /admin/leads)만 여기 정의한 값을 쓴다.
+   */
+  --color-green: #0B5345;
+  --color-green-deep: #073B31;
+  --color-green-tint: #EAF2F0;
+  --color-gray-1: #787878;
+  --color-gray-2: #ABABAB;
+  --color-gray-3: #6E6E6E;
+
+  /*
    * [지도 화면 z-index — 한 곳에서 관리, 2026-09-19]
    * 값 자체는 전부 이전과 동일하다(스택 순서 변경 없음) — 여러 파일(app/page.tsx,
    * MapCanvas.tsx, BottomSheet.tsx, PlaceDetailSheet.tsx, Sidebar.tsx)에 숫자로만
