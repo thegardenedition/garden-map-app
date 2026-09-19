@@ -132,13 +132,13 @@ function PasswordGate({ onSubmit }: { onSubmit: (value: string) => void }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--color-green-tint)] p-6">
+    <div className="flex min-h-screen items-center justify-center bg-[var(--color-green-tint)] p-6 text-[var(--color-ink)]">
       <form
         onSubmit={(e) => {
           e.preventDefault();
           if (value.trim() && !checking) verifyAndSubmit(value.trim());
         }}
-        className="w-full max-w-sm border border-black/5 bg-white p-6 text-[var(--ink,#1C1F1E)] shadow-[0_24px_60px_-32px_rgba(11,83,69,0.25)]"
+        className="w-full max-w-sm border border-black/5 bg-white p-6 shadow-[0_24px_60px_-32px_rgba(11,83,69,0.25)]"
       >
         <p className="mb-1 text-[20px] font-extrabold tracking-tight">견적 리드 관리</p>
         <p className="mb-4 text-[13px] text-[var(--color-gray-3)]">관리자 비밀번호를 입력하세요. (가든 핀 등록 도구와 같은 비밀번호)</p>
@@ -222,7 +222,7 @@ function LeadCard({ lead, saving, onPatch }: { lead: Lead; saving: boolean; onPa
         </span>
       </div>
 
-      <p className="mt-2.5 text-[13px] text-[var(--ink,#1C1F1E)]">{gardenSummary(lead)}</p>
+      <p className="mt-2.5 text-[13px] text-[var(--color-ink)]">{gardenSummary(lead)}</p>
 
       {lead.memo && <p className="mt-2 whitespace-pre-wrap border-l-2 border-[var(--color-green-tint)] pl-3 text-[13px] leading-relaxed text-[var(--color-gray-3)]">{lead.memo}</p>}
 
@@ -344,7 +344,7 @@ export default function AdminLeadsPage() {
   if (!secret) return <PasswordGate onSubmit={setSecret} />;
 
   return (
-    <div className="min-h-screen bg-[var(--color-green-tint)]">
+    <div className="min-h-screen bg-[var(--color-green-tint)] text-[var(--color-ink)]">
       <div className="mx-auto max-w-3xl px-4 py-8">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
