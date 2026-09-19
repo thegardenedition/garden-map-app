@@ -392,7 +392,7 @@ export default function Page() {
           {showResearchHere && (
             <button
               onClick={handleResearchHere}
-              className="tp-caption absolute left-1/2 top-4 z-[30] -translate-x-1/2 rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+              className="tp-caption absolute left-1/2 top-4 z-[var(--z-desktop-float-actions)] -translate-x-1/2 rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
             >
               ⟳ 이 근처에서 찾기
             </button>
@@ -400,7 +400,7 @@ export default function Page() {
           <button
             onClick={handleLocateOnly}
             aria-label="현재 위치"
-            className="absolute bottom-6 right-6 z-[30] flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+            className="absolute bottom-6 right-6 z-[var(--z-desktop-float-actions)] flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
           >
             ◎
           </button>
@@ -420,7 +420,7 @@ export default function Page() {
           사이 8px 틈도 전부 그렇다. 그래서 화면 위 138px 띠에서는 지도를 끌 수도, 그 자리
           마커를 누를 수도 없었다 — 지도는 보이는데 반응하지 않으니 고장으로 느껴진다.
           껍데기는 터치를 흘려보내고, 실제 조작이 필요한 자식만 받는다. */}
-      <div ref={topStackRef} className="pointer-events-none absolute inset-x-3 top-3 z-[20] flex flex-col gap-2">
+      <div ref={topStackRef} className="pointer-events-none absolute inset-x-3 top-3 z-[var(--z-mobile-topstack)] flex flex-col gap-2">
         {!mapUiHidden && (
           <>
             {/* 데스크탑 사이드바에는 브랜드 배지가 있지만 모바일 상단바에는 아예 없었다 —
@@ -473,7 +473,7 @@ export default function Page() {
       <button
         onClick={() => setMapUiHidden((v) => !v)}
         aria-label={mapUiHidden ? "검색·필터 다시 보기" : "지도만 보기"}
-        className="pointer-events-auto absolute right-3 top-3 z-[21] flex h-10 w-10 items-center justify-center rounded-full bg-white text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+        className="pointer-events-auto absolute right-3 top-3 z-[var(--z-mobile-ui-toggle)] flex h-10 w-10 items-center justify-center rounded-full bg-white text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
       >
         {mapUiHidden ? "⌄" : "⌃"}
       </button>
@@ -489,7 +489,7 @@ export default function Page() {
           좁으면 줄바꿈되게 한다. 껍데기는 터치를 흘려보내고 버튼만 받는다(상단 스택과 같은 이유). */}
       {!mapUiHidden && (showResearchHere || !isBrowseMode) && (
         <div
-          className="pointer-events-none absolute inset-x-3 z-[25] flex flex-wrap items-center justify-center gap-2"
+          className="pointer-events-none absolute inset-x-3 z-[var(--z-mobile-float-actions)] flex flex-wrap items-center justify-center gap-2"
           style={{ top: sheetMinTop || 160 }}
         >
           {showResearchHere && (

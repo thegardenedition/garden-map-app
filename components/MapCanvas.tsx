@@ -65,6 +65,20 @@ function isTouchCapable(): boolean {
 }
 
 /*
+ * [지도 내부 오버레이 zIndex — 한 곳에서 관리, 2026-09-19]
+ * 값 자체는 전부 이전과 동일하다(스택 순서 변경 없음) — 이 파일 안에 숫자로만 흩어져
+ * 있던 것을 이름 붙여 모았다. 이 스택은 app/globals.css의 페이지 z-index(--z-*)와는
+ * 별개다 — 카카오 지도가 컨테이너 내부에서 마커·오버레이 순서를 독립적으로 관리하기
+ * 때문이다(둘이 같은 스택킹 컨텍스트를 놓고 경쟁하지 않는다).
+ */
+const MAP_OVERLAY_Z = {
+  clusterBadge: 10, // 합성 클러스터 배지(computeClusterBuckets)
+  hoverLift: 40, // 호버 시 커지는 핀 오버레이
+  selectedPin: 50, // 선택된 장소의 고립 마커
+  hoverTooltip: 100, // 호버 툴팁
+} as const;
+
+/*
  * [핀 이미지]
  * 도형·색·아이콘은 전부 lib/icons.tsx 가 갖고 있고 여기서는 그걸 카카오 MarkerImage 로만 감싼다.
  * 지도·필터 칩·목록·상세가 같은 그림을 쓰게 하려면 정의가 한 곳에만 있어야 한다.
@@ -788,7 +802,7 @@ export default function MapCanvas({
         content.addEventListener("click", () => {
           map.setLevel(map.getLevel() - 1, { anchor: position, animate: true });
         });
-        const overlay = new kakao.maps.CustomOverlay({ position, content, zIndex: 10 });
+        const overlay = new kakao.maps.CustomOverlay({ position, content, zIndex: MAP_OVERLAY_Z.clusterBadge });
         overlay.setMap(map);
         return overlay;
       });
@@ -882,7 +896,7 @@ export default function MapCanvas({
               position: marker.getPosition(),
               content: hoverTooltipHtml(current),
               yAnchor: 1,
-              zIndex: 100,
+              zIndex: MAP_OVERLAY_Z.hoverTooltip,
             });
             hoverOverlayRef.current.setMap(map);
             hoveredPlaceIdRef.current = placeId;
@@ -905,7 +919,7 @@ export default function MapCanvas({
               content: img,
               xAnchor: size.anchorX / size.width,
               yAnchor: size.anchorY / size.height,
-              zIndex: 40,
+              zIndex: MAP_OVERLAY_Z.hoverLift,
             });
             hoverLiftOverlayRef.current.setMap(map);
             // scale(1) 상태가 먼저 한 프레임 그려진 뒤에 목표 값으로 바꿔야 transition이
@@ -1165,7 +1179,7 @@ export default function MapCanvas({
       content,
       xAnchor: size.anchorX / size.width,
       yAnchor: size.anchorY / size.height,
-      zIndex: 50,
+      zIndex: MAP_OVERLAY_Z.selectedPin,
     });
     overlay.setMap(map);
     isolatedMarkerRef.current = overlay;
@@ -1224,7 +1238,7 @@ export default function MapCanvas({
       <div ref={mapDivRef} className="absolute inset-0 h-full w-full" style={{ touchAction: "none" }} />
       <div
         ref={hintRef}
-        className="pointer-events-none absolute left-1/2 top-1/2 z-[45] -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/70 px-4 py-2 text-[13px] font-bold text-white opacity-0 transition-opacity duration-200"
+        className="pointer-events-none absolute left-1/2 top-1/2 z-[var(--z-desktop-hint)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/70 px-4 py-2 text-[13px] font-bold text-white opacity-0 transition-opacity duration-200"
       >
         Ctrl 키를 누르고 스크롤하면 확대/축소됩니다
       </div>

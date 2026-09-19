@@ -49,7 +49,7 @@ export default function Sidebar({
   const setSearchTerm = useGardenMapStore((s) => s.setSearchTerm);
 
   return (
-    <div className="relative z-[20] flex h-full w-[400px] flex-shrink-0 flex-col bg-[var(--color-deep-blue)] text-white">
+    <div className="relative z-[var(--z-desktop-sidebar)] flex h-full w-[400px] flex-shrink-0 flex-col bg-[var(--color-deep-blue)] text-white">
       <div className="flex-shrink-0 px-6 pb-3.5 pt-6">
         {/* 이 앱을 vercel.app 주소로 직접 열거나 북마크해 들어온 사람은 매거진그린으로
             돌아갈 길이 없었다(GARDEN MAP 배지가 링크가 아니었다). 배지 왼쪽에 브랜드
