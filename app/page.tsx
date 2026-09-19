@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import MapCanvas from "@/components/MapCanvas";
 import TopBar from "@/components/TopBar";
@@ -42,6 +43,11 @@ const GEO_OPTS: PositionOptions = {
 // 지도 중심이 기준점에서 이만큼 멀어져야 "이 근처에서 찾기" 버튼을 띄운다. 예전에는 손가락으로
 // 살짝만 밀어도 버튼이 튀어나와 지도를 가렸다.
 const PAN_THRESHOLD_M = 800;
+
+// [플로팅 버튼 등장·퇴장 — 2026-09-19] "이 근처에서 찾기"·"지도만 보기" 대상 스택·"지도
+// 탐색으로 ✕" 등은 전부 조건부 렌더라 예전엔 스냅 등장/소멸했다. 값(보여줄지 말지 판단하는
+// 로직)은 그대로 두고, AnimatePresence로 감싸 페이드+살짝 이동만 얹는다.
+const FLOAT_FADE_TRANSITION = { duration: 0.18 };
 
 // 실패 이유마다 할 수 있는 일이 다르다. 예전에는 무엇이든 "위치 권한을 확인해주세요" 였는데,
 // 실내에서 시간이 초과된 사람에게는 틀린 안내다.
@@ -389,14 +395,26 @@ export default function Page() {
         />
         <div className="relative h-full flex-1">
           {mapCanvas}
-          {showResearchHere && (
-            <button
-              onClick={handleResearchHere}
-              className="tp-caption absolute left-1/2 top-4 z-[var(--z-desktop-float-actions)] -translate-x-1/2 rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
-            >
-              ⟳ 이 근처에서 찾기
-            </button>
-          )}
+          <AnimatePresence>
+            {showResearchHere && (
+              <motion.div
+                key="research-here-desktop"
+                className="absolute left-1/2 top-4 z-[var(--z-desktop-float-actions)]"
+                style={{ x: "-50%" }}
+                initial={{ opacity: 0, y: -8, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -8, scale: 0.9 }}
+                transition={FLOAT_FADE_TRANSITION}
+              >
+                <button
+                  onClick={handleResearchHere}
+                  className="tp-caption rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+                >
+                  ⟳ 이 근처에서 찾기
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
           <button
             onClick={handleLocateOnly}
             aria-label="현재 위치"
@@ -420,9 +438,17 @@ export default function Page() {
           사이 8px 틈도 전부 그렇다. 그래서 화면 위 138px 띠에서는 지도를 끌 수도, 그 자리
           마커를 누를 수도 없었다 — 지도는 보이는데 반응하지 않으니 고장으로 느껴진다.
           껍데기는 터치를 흘려보내고, 실제 조작이 필요한 자식만 받는다. */}
-      <div ref={topStackRef} className="pointer-events-none absolute inset-x-3 top-3 z-[var(--z-mobile-topstack)] flex flex-col gap-2">
-        {!mapUiHidden && (
-          <>
+      <div ref={topStackRef} className="pointer-events-none absolute inset-x-3 top-3 z-[var(--z-mobile-topstack)]">
+        <AnimatePresence>
+          {!mapUiHidden && (
+          <motion.div
+            key="topstack-content"
+            className="flex flex-col gap-2"
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={FLOAT_FADE_TRANSITION}
+          >
             {/* 데스크탑 사이드바에는 브랜드 배지가 있지만 모바일 상단바에는 아예 없었다 —
                 지도를 iframe 밖에서 직접 열거나 북마크한 사람은 매거진그린으로 돌아갈 길이
                 없었다. 검색창 위에 작은 링크 하나만 얹는다(기존 플로팅 레이아웃 그대로,
@@ -463,8 +489,9 @@ export default function Page() {
                 </div>
               )}
             </div>
-          </>
-        )}
+          </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* [지도만 보기] 검색어·필터는 그대로 두고 상단 스택만 잠깐 걷어낸다. 스택이 사라지든
@@ -487,29 +514,36 @@ export default function Page() {
           내 주변 모드에서 지도를 끌면 둘이 동시에 뜨는데, 360px 폰에서 실측하니 x 115~245 와
           243~348 로 2px 겹쳤고 320px 에서는 크게 겹친다. 한 줄 flex 로 묶어 간격을 보장하고,
           좁으면 줄바꿈되게 한다. 껍데기는 터치를 흘려보내고 버튼만 받는다(상단 스택과 같은 이유). */}
-      {!mapUiHidden && (showResearchHere || !isBrowseMode) && (
-        <div
-          className="pointer-events-none absolute inset-x-3 z-[var(--z-mobile-float-actions)] flex flex-wrap items-center justify-center gap-2"
-          style={{ top: sheetMinTop || 160 }}
-        >
-          {showResearchHere && (
-            <button
-              onClick={handleResearchHere}
-              className="tp-caption pointer-events-auto rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
-            >
-              ⟳ 이 근처에서 찾기
-            </button>
-          )}
-          {!isBrowseMode && (
-            <button
-              onClick={exitToBrowse}
-              className="tp-caption pointer-events-auto rounded-full bg-white px-3 py-2 text-[11px] text-[var(--color-deep-blue)]/80 shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
-            >
-              지도 탐색으로 ✕
-            </button>
-          )}
-        </div>
-      )}
+      <AnimatePresence>
+        {!mapUiHidden && (showResearchHere || !isBrowseMode) && (
+          <motion.div
+            key="mobile-float-actions"
+            className="pointer-events-none absolute inset-x-3 z-[var(--z-mobile-float-actions)] flex flex-wrap items-center justify-center gap-2"
+            style={{ top: sheetMinTop || 160 }}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={FLOAT_FADE_TRANSITION}
+          >
+            {showResearchHere && (
+              <button
+                onClick={handleResearchHere}
+                className="tp-caption pointer-events-auto rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+              >
+                ⟳ 이 근처에서 찾기
+              </button>
+            )}
+            {!isBrowseMode && (
+              <button
+                onClick={exitToBrowse}
+                className="tp-caption pointer-events-auto rounded-full bg-white px-3 py-2 text-[11px] text-[var(--color-deep-blue)]/80 shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+              >
+                지도 탐색으로 ✕
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
 
       <BottomSheet
