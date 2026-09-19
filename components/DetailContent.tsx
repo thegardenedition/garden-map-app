@@ -206,14 +206,30 @@ export default function DetailContent({ place, region }: { place: Place; region:
         />
       </div>
 
-      {/* [Sticky CTA] 네온 옐로우 배경 + 딥 블루 텍스트, 탭 시 scale 0.95 햅틱 애니메이션 */}
-      <motion.button
-        whileTap={{ scale: 0.95 }}
-        onClick={leadFormLive ? () => setLeadModalOpen(true) : undefined}
-        className="tp-cta sticky bottom-0 mt-5 w-full rounded-2xl bg-[var(--color-neon-yellow)] py-3.5 text-[var(--color-deep-blue)]"
-      >
-        믿을 수 있는 정원전문가 찾기
-      </motion.button>
+      {/* [Sticky CTA] 네온 옐로우 배경 + 딥 블루 텍스트, 탭 시 scale 0.95 햅틱 애니메이션.
+          [잠정 링크 — 2026-09-19] mg-biz 리드 폼(LEAD_FORM_LIVE_AT)이 뜨기 전까지는 리드
+          모달 대신 채널그린 정원작가 리스트로 바로 보낸다. 개인정보를 우리 쪽에서 받는 게
+          아니라 외부 링크일 뿐이라 리드 폼의 방침 개정 게이트와는 무관하다. 폼이 열리면
+          원래 문구·동작으로 자동 전환된다(별도 배포 불필요). */}
+      {leadFormLive ? (
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setLeadModalOpen(true)}
+          className="tp-cta sticky bottom-0 mt-5 w-full rounded-2xl bg-[var(--color-neon-yellow)] py-3.5 text-[var(--color-deep-blue)]"
+        >
+          믿을 수 있는 정원전문가 찾기
+        </motion.button>
+      ) : (
+        <motion.a
+          whileTap={{ scale: 0.95 }}
+          href="https://chgreen.co.kr/gardend/gd_list.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="tp-cta sticky bottom-0 mt-5 block w-full rounded-2xl bg-[var(--color-neon-yellow)] py-3.5 text-center text-[var(--color-deep-blue)]"
+        >
+          나만의 정원전문가 찾기 ↗
+        </motion.a>
+      )}
 
       {leadFormLive && leadModalOpen && <LeadModal place={place} onClose={() => setLeadModalOpen(false)} />}
     </div>
