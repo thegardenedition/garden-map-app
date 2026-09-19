@@ -139,7 +139,7 @@ export default function BottomSheet({
     <motion.div
       // overflow-hidden 을 여기에 두지 않는다. floatingActions 는 시트 위쪽(bottom:100%)에
       // 놓이므로 여기서 자르면 통째로 사라진다. 둥근 모서리 클리핑은 아래 내용 상자가 맡는다.
-      className={`gpu absolute inset-x-0 bottom-0 z-[40] flex flex-col ${sheetRadius} bg-white shadow-[0_-8px_28px_rgba(0,0,0,0.28)] transition-[border-radius] duration-300`}
+      className={`gpu absolute inset-x-0 bottom-0 z-[var(--z-bottom-sheet)] flex flex-col ${sheetRadius} bg-white shadow-[0_-8px_28px_rgba(0,0,0,0.28)] transition-[border-radius] duration-300`}
       style={{ height: "100dvh", y }}
       drag="y"
       dragListener={false}

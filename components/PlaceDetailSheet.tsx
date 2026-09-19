@@ -42,14 +42,14 @@ export default function PlaceDetailSheet({
         <>
           <motion.div
             key="backdrop"
-            className="pointer-events-none absolute inset-0 z-[70] bg-black/40"
+            className="pointer-events-none absolute inset-0 z-[var(--z-modal-backdrop)] bg-black/40"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           />
           <motion.div
             key="sheet"
-            className="gpu absolute inset-x-0 bottom-0 z-[80] flex max-h-[70dvh] flex-col rounded-t-[20px] bg-white shadow-[0_-10px_30px_rgba(0,0,0,0.32)]"
+            className="gpu absolute inset-x-0 bottom-0 z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-t-[20px] bg-white shadow-[0_-10px_30px_rgba(0,0,0,0.32)]"
             initial={{ y: "105%" }}
             animate={{ y: 0 }}
             exit={{ y: "105%" }}
