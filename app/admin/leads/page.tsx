@@ -84,14 +84,21 @@ function useAdminSecret() {
     setReady(true);
   }, []);
 
-  const setSecret = (value: string) => {
+  // [함수를 매 렌더마다 새로 만들지 않는다 — 2026-09-20 무한 루프 사고]
+  // useCallback 없이 두면 이 훅을 부르는 컴포넌트가 리렌더될 때마다 setSecret·clearSecret이
+  // "새로운" 함수가 된다. 아래 AdminLeadsPage의 load()는 clearSecret을 의존성 배열에
+  // 넣는데, 그 값이 매번 바뀌는 것으로 보이니 load 자체도 매번 새로 만들어지고, load를
+  // 의존성으로 둔 useEffect가 매 렌더마다 다시 실행돼 서버를 계속 다시 불렀다(실측:
+  // 2.5초 만에 54,685회 요청). useCallback으로 묶어 "값이 실제로 바뀔 때만" 새 함수가
+  // 되게 하면 이 되풀이가 끊긴다.
+  const setSecret = useCallback((value: string) => {
     sessionStorage.setItem(SECRET_STORAGE_KEY, value);
     setSecretState(value);
-  };
-  const clearSecret = () => {
+  }, []);
+  const clearSecret = useCallback(() => {
     sessionStorage.removeItem(SECRET_STORAGE_KEY);
     setSecretState(null);
-  };
+  }, []);
 
   return { secret, setSecret, clearSecret, ready };
 }
