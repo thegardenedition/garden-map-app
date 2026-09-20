@@ -408,7 +408,7 @@ export default function Page() {
               >
                 <button
                   onClick={handleResearchHere}
-                  className="tp-caption rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+                  className="tp-caption rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_8px_20px_-6px_rgba(0,0,0,0.15)]"
                 >
                   ⟳ 이 근처에서 찾기
                 </button>
@@ -418,7 +418,7 @@ export default function Page() {
           <button
             onClick={handleLocateOnly}
             aria-label="현재 위치"
-            className="absolute bottom-6 right-6 z-[var(--z-desktop-float-actions)] flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+            className="absolute bottom-6 right-6 z-[var(--z-desktop-float-actions)] flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)] shadow-[0_8px_20px_-6px_rgba(0,0,0,0.15)]"
           >
             ◎
           </button>
@@ -461,7 +461,7 @@ export default function Page() {
               <a
                 href="https://magazinegreen.co.kr"
                 target="_top"
-                className="tp-caption pointer-events-auto inline-flex w-fit items-center gap-1.5 self-start rounded-2xl bg-[var(--color-deep-blue)]/90 px-3 py-1 text-[var(--color-neon-yellow)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+                className="tp-caption pointer-events-auto inline-flex w-fit items-center gap-1.5 self-start rounded-2xl bg-[var(--color-deep-blue)]/90 px-3 py-1 text-[var(--color-neon-yellow)] shadow-[0_8px_20px_-6px_rgba(0,0,0,0.15)]"
               >
                 ✳ MAGAZINE GREEN
               </a>
@@ -478,14 +478,14 @@ export default function Page() {
                   onClick={() => setFiltersCollapsed((v) => !v)}
                   aria-expanded={!filtersCollapsed}
                   aria-label="필터 펼치기/접기"
-                  className="tp-caption flex flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white px-3 py-2 text-[var(--color-deep-blue)] shadow-[0_2px_8px_rgba(0,0,0,0.18)]"
+                  className="tp-caption flex flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white px-3 py-2 text-[var(--color-deep-blue)] shadow-[0_4px_12px_-4px_rgba(0,0,0,0.10)]"
                 >
                   필터{activeGroupLabel ? ` · ${activeGroupLabel}` : ""} {filtersCollapsed ? "▾" : "▴"}
                 </button>
               )}
               {(isBrowseMode || !filtersCollapsed) && (
                 <div className="min-w-0 flex-1">
-                  <FilterChips onReset={handleReset} canReset={canReset} />
+                  <FilterChips onReset={handleReset} canReset={canReset} variant="popover" />
                 </div>
               )}
             </div>
@@ -500,7 +500,7 @@ export default function Page() {
       <button
         onClick={() => setMapUiHidden((v) => !v)}
         aria-label={mapUiHidden ? "검색·필터 다시 보기" : "지도만 보기"}
-        className="pointer-events-auto absolute right-3 top-3 z-[var(--z-mobile-ui-toggle)] flex h-10 w-10 items-center justify-center rounded-full bg-white text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+        className="pointer-events-auto absolute right-3 top-3 z-[var(--z-mobile-ui-toggle)] flex h-10 w-10 items-center justify-center rounded-full bg-white text-[var(--color-deep-blue)] shadow-[0_8px_20px_-6px_rgba(0,0,0,0.15)]"
       >
         {mapUiHidden ? "⌄" : "⌃"}
       </button>
@@ -528,7 +528,7 @@ export default function Page() {
             {showResearchHere && (
               <button
                 onClick={handleResearchHere}
-                className="tp-caption pointer-events-auto rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+                className="tp-caption pointer-events-auto rounded-full bg-white px-4 py-2.5 text-[var(--color-deep-blue)] shadow-[0_8px_20px_-6px_rgba(0,0,0,0.15)]"
               >
                 ⟳ 이 근처에서 찾기
               </button>
@@ -536,7 +536,7 @@ export default function Page() {
             {!isBrowseMode && (
               <button
                 onClick={exitToBrowse}
-                className="tp-caption pointer-events-auto rounded-full bg-white px-3 py-2 text-[11px] text-[var(--color-deep-blue)]/80 shadow-[0_4px_14px_rgba(0,0,0,0.28)]"
+                className="tp-caption pointer-events-auto rounded-full bg-white px-3 py-2 text-[11px] text-[var(--color-deep-blue)]/80 shadow-[0_8px_20px_-6px_rgba(0,0,0,0.15)]"
               >
                 지도 탐색으로 ✕
               </button>
@@ -555,7 +555,7 @@ export default function Page() {
           // [두 버튼을 한 덩어리로] 예전엔 원형 버튼 두 개가 각자 그림자를 지고 따로 떠 있어
           // 지도 위에 얹힌 장치가 하나 더 있는 것처럼 보였다. 기능은 그대로 두고(따로따로
           // 누른다) 테두리 하나 안에 묶어 그림자 하나·경계 하나로 줄인다.
-          <div className="pointer-events-auto flex flex-col overflow-hidden rounded-[26px] shadow-[0_4px_14px_rgba(0,0,0,0.28)]">
+          <div className="pointer-events-auto flex flex-col overflow-hidden rounded-[26px] shadow-[0_8px_20px_-6px_rgba(0,0,0,0.15)]">
             <button
               onClick={handleNearby}
               disabled={locating}
