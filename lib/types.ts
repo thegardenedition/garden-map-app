@@ -47,6 +47,13 @@ export interface Place {
   // 아래 둘은 custom(가든 핀 등록 도구)에만 있는 값이다.
   photoUrl?: string | null;
   note?: string | null;
+  // [사업영역 — 2026-09-20] 카카오 category_name · 네이버 category · D1 대장 category_path는
+  // 셋 다 같은 성격(업체 분류 경로 문자열)이라 하나로 합친다. 지금까지는 세 곳 다 값을 받아놓고
+  // 상세 카드에는 안 내보내서, "사업영역" 행이 항상 빈 칸으로 하드코딩돼 있었다.
+  businessCategory?: string | null;
+  // 네이버 지역검색이 주는 업체 한 줄 소개. 카카오·D1 대장에는 대응 값이 없어 kakao 출처
+  // 전체가 아니라 네이버로 보완된 항목에만 채워진다.
+  description?: string | null;
 }
 
 // 목록과 지도 툴팁이 같은 규칙으로 거리를 쓰도록 여기 둔다. 화면 문구용 상수(GROUP_LABEL 등)가

@@ -73,6 +73,16 @@ function truncateUrl(url: string, maxLen: number) {
   return display.length > maxLen ? display.slice(0, maxLen) + "…" : display;
 }
 
+// [사업영역 문구 다듬기 — 2026-09-20] 카카오·네이버·D1 대장이 주는 원문은
+// "서비스,산업 > 건설,건축 > 엔지니어링 > 조경설계"처럼 최상위 대분류부터 다 들어 있다.
+// 사용자에게는 맨 앞 대분류(서비스,산업 / 가정,생활 같은)가 의미가 없고 뒤쪽 2단계가
+// 실제로 궁금한 정보라 그것만 남긴다. 구분자도 " > "(내부 분류 표기)에서 " · "로 바꾼다.
+function formatBusinessCategory(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const parts = raw.split(">").map((s) => s.trim()).filter(Boolean);
+  return parts.slice(-2).join(" · ") || raw;
+}
+
 export default function DetailContent({ place, region }: { place: Place; region: Region }) {
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const leadFormLive = Date.now() >= LEAD_FORM_LIVE_AT;
@@ -159,8 +169,16 @@ export default function DetailContent({ place, region }: { place: Place; region:
         </div>
       ) : (
         <div>
+          {place.description && (
+            <p className="mb-2 text-[12.5px] leading-relaxed text-[#5A5A78]">{place.description}</p>
+          )}
           <InfoRow icon={<InfoIcon name="phone" />} label="전화" value={place.contact} muted={!place.contact} />
-          <InfoRow icon={<InfoIcon name="tag" />} label="사업영역" value={null} muted />
+          <InfoRow
+            icon={<InfoIcon name="tag" />}
+            label="사업영역"
+            value={formatBusinessCategory(place.businessCategory)}
+            muted={!place.businessCategory}
+          />
           <InfoRow
             icon={<InfoIcon name="link" />}
             label="홈페이지"
@@ -197,6 +215,21 @@ export default function DetailContent({ place, region }: { place: Place; region:
             rel="noopener noreferrer"
           >
             홈페이지
+          </a>
+        )}
+        {/* [카카오맵에서 보기 — 2026-09-20] place.homepage는 업체 홈페이지가 아니라 카카오
+            응답의 place_url(카카오맵 상세 페이지)이다. 지금까지는 "출처가 카카오다"를
+            판별하는 용도로만 쓰고 링크로는 안 보여줬는데, 그 페이지에 이미 쌓인 리뷰·사진·
+            영업시간을 사용자가 바로 볼 수 있게 버튼으로 노출한다. registry·tourapi·custom·
+            네이버 단독 결과는 이 값이 없어 버튼 자체가 안 뜬다. */}
+        {place.homepage && (
+          <a
+            className="tp-caption rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] px-4 py-2.5 text-[var(--color-deep-blue)]"
+            href={place.homepage}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            카카오맵에서 보기
           </a>
         )}
         <ShareButton

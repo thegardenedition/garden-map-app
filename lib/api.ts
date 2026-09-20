@@ -98,12 +98,14 @@ function mapKakaoDoc(doc: KakaoDoc, group: GroupId, sub: SubId): Place {
     homepageDirect: null,
     source: "kakao",
     distanceM: null,
+    businessCategory: doc.category_name || null,
   };
 }
 
 interface NaverDoc {
   title: string;
   category: string;
+  description: string;
   roadAddress: string;
   address: string;
   telephone: string;
@@ -144,6 +146,8 @@ async function fetchNaverIndependent(region: Region, keyword: string): Promise<P
       homepageDirect,
       source: "kakao",
       distanceM: null,
+      businessCategory: category || null,
+      description: stripHtml(d.description || "") || null,
     });
   }
   return out;
@@ -212,6 +216,7 @@ async function fetchBizV2(query: BizV2Query): Promise<Place[]> {
       homepageDirect: null,
       source: "kakao" as const,
       distanceM: typeof r.distance_m === "number" ? r.distance_m : null,
+      businessCategory: r.category_path || null,
     }));
 }
 
@@ -522,6 +527,11 @@ function backfillContactFields(kept: Place, dupe: Place) {
   if (!kept.contact && dupe.contact) kept.contact = dupe.contact;
   if (!kept.address && dupe.address) kept.address = dupe.address;
   if (!kept.homepageDirect && dupe.homepageDirect) kept.homepageDirect = dupe.homepageDirect;
+  // [사업영역·소개 백필 — 2026-09-20] 대장(D1)이 우선 남는 소스라 category_path가 거의 항상
+  // 채워져 있지만, 혹시 비어 있으면 카카오/네이버 쪽 값으로 채운다. 소개(description)는
+  // 네이버에만 있는 값이라 대장/카카오가 먼저 남아도 이렇게 하지 않으면 영영 빈 칸으로 남는다.
+  if (!kept.businessCategory && dupe.businessCategory) kept.businessCategory = dupe.businessCategory;
+  if (!kept.description && dupe.description) kept.description = dupe.description;
 }
 function mergeDedup(...lists: Place[][]): Place[] {
   const byKey = new Map<string, Place>();
