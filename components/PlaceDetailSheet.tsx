@@ -49,7 +49,7 @@ export default function PlaceDetailSheet({
           />
           <motion.div
             key="sheet"
-            className="gpu absolute inset-x-0 bottom-0 z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-t-[20px] bg-white shadow-[0_-10px_30px_rgba(0,0,0,0.32)]"
+            className="gpu absolute inset-x-0 bottom-0 z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-t-[20px] bg-white shadow-[0_-20px_50px_-10px_rgba(0,0,0,0.12)]"
             initial={{ y: "105%" }}
             animate={{ y: 0 }}
             exit={{ y: "105%" }}

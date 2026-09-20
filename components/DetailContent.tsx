@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import type { Place, Region } from "@/lib/types";
 import { SUB_DEFS } from "@/lib/types";
-import { CategoryIcon, GROUP_COLOR } from "@/lib/icons";
+import { CategoryIcon, GROUP_COLOR, InfoIcon } from "@/lib/icons";
 import { fetchNaverHomepage, fetchTourIntro, kakaoDirLink } from "@/lib/api";
 import { kakaoPlaceLink } from "@/lib/shareLink";
 import ShareButton from "./ShareButton";
@@ -31,7 +31,7 @@ function InfoRow({
   muted,
   href,
 }: {
-  icon: string;
+  icon: React.ReactNode;
   label: string;
   value: string | null;
   muted?: boolean;
@@ -39,7 +39,7 @@ function InfoRow({
 }) {
   return (
     <div className="flex min-w-0 items-start gap-2.5 border-b border-[#F5F6FF] py-[7px] text-[12.5px] last:border-b-0">
-      <span className="w-4 flex-shrink-0 text-center opacity-70">{icon}</span>
+      <span className="flex w-4 flex-shrink-0 items-center justify-center pt-[1px] text-[#9AA0C4]">{icon}</span>
       <span className="w-16 flex-shrink-0 font-bold text-[#9AA0C4]">{label}</span>
       {href ? (
         <a
@@ -113,28 +113,28 @@ export default function DetailContent({ place, region }: { place: Place; region:
         /* [대장 출처] 한국수목원정원관리원이 직접 관리하는 값이라 외부에 다시 물어볼 필요가 없다.
            투어API가 주지 않는 입장료·반려동물 동반 여부를 여기서만 보여줄 수 있다. */
         <div>
-          <InfoRow icon="☎" label="전화" value={place.contact} muted={!place.contact} />
-          <InfoRow icon="💳" label="입장료" value={formatFees(place.fees)} />
-          <InfoRow icon="📅" label="휴관일" value={place.restdate ?? null} muted={!place.restdate} />
-          <InfoRow icon="🐾" label="반려동물" value={place.petAllowed ? "동반 가능" : "동반 불가"} muted={!place.petAllowed} />
+          <InfoRow icon={<InfoIcon name="phone" />} label="전화" value={place.contact} muted={!place.contact} />
+          <InfoRow icon={<InfoIcon name="fee" />} label="입장료" value={formatFees(place.fees)} />
+          <InfoRow icon={<InfoIcon name="closedDay" />} label="휴관일" value={place.restdate ?? null} muted={!place.restdate} />
+          <InfoRow icon={<InfoIcon name="pet" />} label="반려동물" value={place.petAllowed ? "동반 가능" : "동반 불가"} muted={!place.petAllowed} />
           {place.species?.some(Boolean) && (
-            <InfoRow icon="🌿" label="대표수종" value={place.species.filter(Boolean).join(" / ")} />
+            <InfoRow icon={<InfoIcon name="species" />} label="대표수종" value={place.species.filter(Boolean).join(" / ")} />
           )}
           <InfoRow
-            icon="🔗"
+            icon={<InfoIcon name="link" />}
             label="홈페이지"
             value={place.homepageDirect ? truncateUrl(place.homepageDirect, 30) : null}
             muted={!place.homepageDirect}
             href={place.homepageDirect}
           />
-          <InfoRow icon="📍" label="출처" value="한국수목원정원관리원" />
+          <InfoRow icon={<InfoIcon name="pin" />} label="출처" value="한국수목원정원관리원" />
         </div>
       ) : place.source === "tourapi" ? (
         <div>
-          <InfoRow icon="☎" label="전화" value={place.contact || tourInfo.data?.tel || null} muted={!place.contact && !tourInfo.data?.tel} />
-          <InfoRow icon="🕐" label="이용시간" value={tourInfo.data?.usetime ?? null} muted={!tourInfo.data?.usetime} />
-          <InfoRow icon="📅" label="쉬는날" value={tourInfo.data?.restdate ?? null} muted={!tourInfo.data?.restdate} />
-          <InfoRow icon="🅿" label="주차" value={tourInfo.data?.parking ?? null} muted={!tourInfo.data?.parking} />
+          <InfoRow icon={<InfoIcon name="phone" />} label="전화" value={place.contact || tourInfo.data?.tel || null} muted={!place.contact && !tourInfo.data?.tel} />
+          <InfoRow icon={<InfoIcon name="clock" />} label="이용시간" value={tourInfo.data?.usetime ?? null} muted={!tourInfo.data?.usetime} />
+          <InfoRow icon={<InfoIcon name="closedDay" />} label="쉬는날" value={tourInfo.data?.restdate ?? null} muted={!tourInfo.data?.restdate} />
+          <InfoRow icon={<InfoIcon name="parking" />} label="주차" value={tourInfo.data?.parking ?? null} muted={!tourInfo.data?.parking} />
         </div>
       ) : place.source === "custom" ? (
         /* [간단 핀] "가든 핀 등록 도구"로 사람이 직접 넣은 장소라 연락처/홈페이지를 외부에서
@@ -154,15 +154,15 @@ export default function DetailContent({ place, region }: { place: Place; region:
               }}
             />
           )}
-          <InfoRow icon="📝" label="메모" value={place.note ?? null} muted={!place.note} />
-          <InfoRow icon="📍" label="출처" value="가든 핀 등록 도구" />
+          <InfoRow icon={<InfoIcon name="note" />} label="메모" value={place.note ?? null} muted={!place.note} />
+          <InfoRow icon={<InfoIcon name="pin" />} label="출처" value="가든 핀 등록 도구" />
         </div>
       ) : (
         <div>
-          <InfoRow icon="☎" label="전화" value={place.contact} muted={!place.contact} />
-          <InfoRow icon="🏷" label="사업영역" value={null} muted />
+          <InfoRow icon={<InfoIcon name="phone" />} label="전화" value={place.contact} muted={!place.contact} />
+          <InfoRow icon={<InfoIcon name="tag" />} label="사업영역" value={null} muted />
           <InfoRow
-            icon="🔗"
+            icon={<InfoIcon name="link" />}
             label="홈페이지"
             value={
               place.homepageDirect
@@ -176,7 +176,7 @@ export default function DetailContent({ place, region }: { place: Place; region:
             muted={!place.homepageDirect && !naverHomepage.data}
             href={place.homepageDirect || naverHomepage.data}
           />
-          <InfoRow icon="📍" label="출처" value={place.homepage ? "카카오맵" : "네이버"} />
+          <InfoRow icon={<InfoIcon name="pin" />} label="출처" value={place.homepage ? "카카오맵" : "네이버"} />
         </div>
       )}
 

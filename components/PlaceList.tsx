@@ -60,7 +60,7 @@ export default function PlaceList({
                 height: row.size,
                 transform: `translateY(${row.start}px)`,
               }}
-              className="flex flex-col items-start justify-center border-b border-[#F0F1FC] px-[18px] text-left active:bg-[#F5F6FF]"
+              className="flex flex-col items-start justify-center border-b border-[#F0F1FC] px-[18px] text-left transition-colors duration-150 active:bg-[#F5F6FF]"
             >
               <div className="mb-1 flex items-center gap-1.5">
                 <span className="tp-caption inline-flex items-center gap-1 rounded-lg bg-[rgba(6,16,125,0.08)] px-2 py-0.5 text-[9px] text-[var(--color-deep-blue)]">
