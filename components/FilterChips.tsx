@@ -1,6 +1,7 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { GROUP_LABEL, SUB_DEFS, type GroupId } from "@/lib/types";
 import { CategoryIcon, GROUP_COLOR } from "@/lib/icons";
 import { useGardenMapStore } from "@/lib/store";
@@ -42,7 +43,7 @@ function GroupChip({
     <button
       onClick={onClick}
       aria-pressed={active}
-      className="tp-caption relative flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3 py-2 text-[var(--color-deep-blue)] shadow-[0_2px_8px_rgba(0,0,0,0.18)]"
+      className="tp-caption relative flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3 py-2 text-[var(--color-deep-blue)] shadow-[0_4px_12px_-4px_rgba(0,0,0,0.10)]"
     >
       {active && (
         <motion.div
@@ -102,20 +103,88 @@ function SubChip({
 
 // [z-index 및 2-Depth 필터] 사양의 z-20 레이어에 해당 — 상단 검색바 바로 아래, 지도 위에 떠서
 // 가로 스와이프(no-scrollbar)로 그룹→서브카테고리 2단계를 오간다.
+//
+// [소분류를 팝오버로 — 2026-09-20] 모바일(variant="popover")에서는 소분류 줄이 이전처럼
+// 대분류 줄 아래 문서 흐름에 얹히지 않는다. 대분류를 고를 때마다 상단 스택 전체 높이가
+// 늘어나 그만큼 지도가 좁아지던 문제를, 소분류를 absolute 오버레이로 띄워 없앤다 — 열려도
+// 아래 지도 영역은 그대로다. "대분류가 골라졌다"(activeGroup, 검색 필터 값 자체)와 "소분류
+// 목록이 화면에 펼쳐져 있다"(subPanelOpen, 순전히 UI 상태)를 나눠서, 바깥을 탭해 패널만
+// 닫아도 선택된 필터는 유지된다. 데스크톱 사이드바(variant="inline", 기본값)는 폭이 좁고
+// 세로 스크롤 컨테이너라 오버레이가 어색해 예전처럼 인라인을 그대로 쓴다.
 export default function FilterChips({
   onReset,
   canReset,
+  variant = "inline",
 }: {
   onReset?: () => void;
   canReset?: boolean;
+  variant?: "inline" | "popover";
 }) {
   const activeGroup = useGardenMapStore((s) => s.activeGroup);
   const activeSub = useGardenMapStore((s) => s.activeSub);
   const setActiveGroup = useGardenMapStore((s) => s.setActiveGroup);
   const setActiveSub = useGardenMapStore((s) => s.setActiveSub);
 
+  const isPopover = variant === "popover";
+  const [subPanelOpen, setSubPanelOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // 대분류를 새로 고르거나 끄면 패널도 그에 맞춰 자동으로 열리거나 닫힌다.
+  useEffect(() => {
+    setSubPanelOpen(Boolean(activeGroup));
+  }, [activeGroup]);
+
+  // 패널이 펼쳐진 동안 그 바깥(지도 등)을 탭하면 패널만 닫는다 — 선택값은 그대로 둔다.
+  useEffect(() => {
+    if (!isPopover || !subPanelOpen) return;
+    function handlePointerDown(e: PointerEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) setSubPanelOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isPopover, subPanelOpen]);
+
+  function handleGroupClick(g: GroupId) {
+    if (activeGroup === g) {
+      // 팝오버 모드에서 바깥 탭으로 패널만 닫아 둔 상태라면, 같은 칩을 다시 눌렀을 때
+      // 그룹을 끄는 대신 패널을 다시 연다 — 그래야 "닫은 패널 다시 열기" 길이 생긴다.
+      if (isPopover && !subPanelOpen) {
+        setSubPanelOpen(true);
+      } else {
+        setActiveGroup(null);
+      }
+    } else {
+      setActiveGroup(g);
+      setSubPanelOpen(true);
+    }
+  }
+
+  const subChips = activeGroup && (
+    <>
+      <SubChip group={activeGroup} active={!activeSub} onClick={() => setActiveSub(null)}>
+        전체
+      </SubChip>
+      {/* browsable: false 인 소분류는 칩으로 내걸지 않는다 — 지금은 "조경종합"뿐이고,
+          이유는 lib/types.ts 의 해당 항목에 적어 뒀다. 이미 선택돼 있다면(예전 상태가
+          남아 있는 경우) 끄지 못하는 상태가 되므로 그때는 예외적으로 보여준다. */}
+      {SUB_DEFS[activeGroup]
+        .filter((sub) => sub.browsable !== false || activeSub === sub.id)
+        .map((sub) => (
+          <SubChip
+            key={sub.id}
+            group={activeGroup}
+            sub={sub.id}
+            active={activeSub === sub.id}
+            onClick={() => setActiveSub(sub.id)}
+          >
+            {sub.label}
+          </SubChip>
+        ))}
+    </>
+  );
+
   return (
-    <div className="flex flex-col gap-2">
+    <div ref={rootRef} className={isPopover ? "relative flex flex-col gap-2" : "flex flex-col gap-2"}>
       <div className="flex items-center gap-2">
         {/* 칩이 화면보다 넓어 잘릴 때, 잘린 자리가 고장난 것처럼 보이지 않도록 오른쪽 끝을
             흐리게 지운다 — 더 있으니 밀어보라는 신호. */}
@@ -127,12 +196,7 @@ export default function FilterChips({
             전체
           </GroupChip>
           {GROUP_ORDER.map((g) => (
-            <GroupChip
-              key={g}
-              group={g}
-              active={activeGroup === g}
-              onClick={() => setActiveGroup(activeGroup === g ? null : g)}
-            >
+            <GroupChip key={g} group={g} active={activeGroup === g} onClick={() => handleGroupClick(g)}>
               {GROUP_LABEL[g]}
             </GroupChip>
           ))}
@@ -151,28 +215,27 @@ export default function FilterChips({
         )}
       </div>
 
-      {activeGroup && (
-        <div className="no-scrollbar flex gap-1.5 overflow-x-auto rounded-2xl bg-[var(--color-secondary-blur)] p-1.5">
-          <SubChip group={activeGroup} active={!activeSub} onClick={() => setActiveSub(null)}>
-            전체
-          </SubChip>
-          {/* browsable: false 인 소분류는 칩으로 내걸지 않는다 — 지금은 "조경종합"뿐이고,
-              이유는 lib/types.ts 의 해당 항목에 적어 뒀다. 이미 선택돼 있다면(예전 상태가
-              남아 있는 경우) 끄지 못하는 상태가 되므로 그때는 예외적으로 보여준다. */}
-          {SUB_DEFS[activeGroup]
-            .filter((sub) => sub.browsable !== false || activeSub === sub.id)
-            .map((sub) => (
-              <SubChip
-                key={sub.id}
-                group={activeGroup}
-                sub={sub.id}
-                active={activeSub === sub.id}
-                onClick={() => setActiveSub(sub.id)}
-              >
-                {sub.label}
-              </SubChip>
-            ))}
-        </div>
+      {isPopover ? (
+        <AnimatePresence>
+          {activeGroup && subPanelOpen && (
+            <motion.div
+              key="sub-panel"
+              initial={{ opacity: 0, y: -6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.98 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              className="no-scrollbar absolute left-0 right-0 top-full z-[var(--z-mobile-topstack)] mt-2 flex gap-1.5 overflow-x-auto rounded-2xl bg-[var(--color-secondary-blur)] p-1.5 shadow-[0_12px_28px_-8px_rgba(0,0,0,0.25)]"
+            >
+              {subChips}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      ) : (
+        activeGroup && (
+          <div className="no-scrollbar flex gap-1.5 overflow-x-auto rounded-2xl bg-[var(--color-secondary-blur)] p-1.5">
+            {subChips}
+          </div>
+        )
       )}
     </div>
   );
