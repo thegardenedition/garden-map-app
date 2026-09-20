@@ -264,3 +264,68 @@ export function CategoryIcon({
     />
   );
 }
+
+/*
+ * [상세 정보 행 아이콘 — 2026-09-20]
+ * DetailContent의 전화·입장료·휴관일 같은 항목들은 이모지(☎ 💳 📅 🐾 …)를 그대로 썼다.
+ * 위 CategoryIcon과 같은 문제(OS마다 다른 그림, 자기 색을 가짐, 시각 언어 불일치)가 있어
+ * 같은 24 그리드/선 스타일로 다시 그린다. ICON_PATHS는 SubId(소분류) 전용 타입이라 이
+ * 새로운 의미(전화, 시계 등)의 키를 끼워 넣을 수 없어서 별도 맵으로 둔다.
+ */
+export type InfoIconName =
+  | "phone"
+  | "fee"
+  | "closedDay"
+  | "pet"
+  | "species"
+  | "link"
+  | "pin"
+  | "clock"
+  | "parking"
+  | "note"
+  | "tag";
+
+export const INFO_ICON_PATHS: Record<InfoIconName, string> = {
+  phone: '<rect x="8" y="2.8" width="8" height="18.4" rx="2"/><path d="M10.5 5.4h3"/><path d="M11 17.6h2"/>',
+  fee: '<circle cx="9" cy="9" r="5.4"/><circle cx="15" cy="15" r="5.4"/>',
+  closedDay:
+    '<rect x="3.6" y="5" width="16.8" height="15" rx="2"/><path d="M3.6 9.4h16.8"/><path d="M8 3v3.6"/><path d="M16 3v3.6"/><path d="M9.6 13l4.8 4.8"/><path d="M14.4 13l-4.8 4.8"/>',
+  pet: '<circle cx="12" cy="15.4" r="3"/><circle cx="6.6" cy="9.4" r="1.8"/><circle cx="17.4" cy="9.4" r="1.8"/><circle cx="9.4" cy="6" r="1.6"/><circle cx="14.6" cy="6" r="1.6"/>',
+  species: '<path d="M6 18c0-7 4-12.4 12-13.4C17 12.6 12.6 17 6 18z"/><path d="M7.6 16.4 16.6 5.4"/>',
+  link: '<path d="M10 14 14 10"/><path d="M9 15.6a3.6 3.6 0 0 1 0-5.1l2-2a3.6 3.6 0 0 1 5.1 5.1l-1 1"/><path d="M15 8.4a3.6 3.6 0 0 1 0 5.1l-2 2a3.6 3.6 0 0 1-5.1-5.1l1-1"/>',
+  pin: '<path d="M12 21.4c4-4.2 6.4-7.7 6.4-11a6.4 6.4 0 1 0-12.8 0c0 3.3 2.4 6.8 6.4 11z"/><circle cx="12" cy="10.2" r="2.4"/>',
+  clock: '<circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3.4 2"/>',
+  parking: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9.6 16V8h3a2.6 2.6 0 0 1 0 5.2h-3"/>',
+  note:
+    '<path d="M6 3.6h9l3.4 3.4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.6a1 1 0 0 1 1-1z"/><path d="M8.4 12h7.2"/><path d="M8.4 15.6h7.2"/><path d="M8.4 8.4h4"/>',
+  tag: '<path d="M4 4.6h7.4a1 1 0 0 1 .7.3l7.9 7.9a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-7.9-7.9a1 1 0 0 1-.3-.7V5.6a1 1 0 0 1 1-1z"/><circle cx="8.2" cy="9" r="1.4"/>',
+};
+
+export function InfoIcon({
+  name,
+  size = 14,
+  color,
+  className,
+}: {
+  name: InfoIconName;
+  size?: number;
+  color?: string;
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      aria-hidden="true"
+      className={className}
+      style={{ flexShrink: 0 }}
+      fill="none"
+      stroke={color ?? "currentColor"}
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      dangerouslySetInnerHTML={{ __html: INFO_ICON_PATHS[name] }}
+    />
+  );
+}
