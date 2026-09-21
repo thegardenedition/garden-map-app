@@ -366,6 +366,13 @@ export default function MapCanvas({
   // 줌이 바뀌면 이미 올려둔 마커의 이미지를 다시 만들어야 한다. 그러려면 마커마다 어떤 장소인지
   // 알아야 하므로 나란히 들고 있는다(markersRef 의 값 모양을 바꾸면 쓰는 곳이 다섯 군데라 위험).
   const markerPlacesRef = useRef<Record<string, Place>>({});
+  // [호버 보존 유예의 뒷정리용] 호버 중인 마커는 이번 places에 없어도 즉시 안 지우고 보존한다
+  // (아래 마커 렌더링 이펙트 참고) — 그런데 그게 재조회 스침이 아니라 정말로 없어진 장소라면,
+  // 마우스가 그 핀을 뜨는 순간(mouseout) 다음 렌더를 기다리지 않고 바로 지워야 한다. 지도가
+  // 그 뒤로 한동안 움직이지 않으면(스크롤/줌이 없으면) 렌더링 이펙트가 다시 안 돌아 유령
+  // 마커가 계속 남을 수 있기 때문이다. 렌더링 이펙트가 돌 때마다 "지금 진짜로 있어야 할
+  // placeId 집합"을 여기 적어 두고, mouseout 쪽에서 그 집합에 없으면 그 자리에서 직접 지운다.
+  const validPlaceIdsRef = useRef<Set<string>>(new Set());
   const pinWidthRef = useRef<number>(PIN_DEFAULT.width);
   // [현재 기준 크기] pinWidthRef가 폭 숫자만 들고 있어 팝인/호버 애니메이션이 스케일 계산에
   // 쓸 PinSize 전체(앵커 포함)가 필요할 때마다 다시 찾아야 했다. 같은 값을 객체로도 들고 있는다.
@@ -834,6 +841,7 @@ export default function MapCanvas({
     pinSizeRef.current = currentPinSize;
 
     const nextIds = new Set(places.map((p) => p.placeId));
+    validPlaceIdsRef.current = nextIds;
 
     // 화면에서 사라진 장소의 마커만 지운다.
     const toRemove: any[] = [];
@@ -977,6 +985,17 @@ export default function MapCanvas({
               if (hoverSessionRef.current === session) {
                 session.liftOverlay.setMap(null);
                 hoverSessionRef.current = null;
+                // [유예 중 보존한 마커의 뒷정리] 호버 중이라 렌더링 이펙트가 지우지 않고
+                // 봐준 마커였는데, 마우스가 뜬 지금도 여전히 실제 목록(validPlaceIdsRef)에
+                // 없다면 재조회 스침이 아니라 정말로 없어진 장소다 — 다음 렌더까지
+                // 기다리지 않고 지금 바로 지운다. 지도가 한동안 안 움직이면 다음 렌더가
+                // 없어 유령 마커로 남을 수 있기 때문이다.
+                if (!validPlaceIdsRef.current.has(placeId) && markersRef.current[placeId] === marker) {
+                  clusterer.removeMarkers([marker]);
+                  marker.setMap(null);
+                  delete markersRef.current[placeId];
+                  delete markerPlacesRef.current[placeId];
+                }
               }
             }, 130);
           }, 80);
