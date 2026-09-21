@@ -146,6 +146,28 @@ export default function DetailContent({ place, region }: { place: Place; region:
           <InfoRow icon={<InfoIcon name="closedDay" />} label="쉬는날" value={tourInfo.data?.restdate ?? null} muted={!tourInfo.data?.restdate} />
           <InfoRow icon={<InfoIcon name="parking" />} label="주차" value={tourInfo.data?.parking ?? null} muted={!tourInfo.data?.parking} />
         </div>
+      ) : place.source === "citypark" ? (
+        /* [전국도시공원정보표준데이터] 국토교통부/지자체가 매년 갱신하는 법정 도시공원 대장.
+           TourAPI·한국수목원정원관리원 대장에 없는 동네 근린공원·어린이공원까지 커버한다.
+           입장료·홈페이지 개념이 없는 대신, 법정 공원구분과 실제 보유시설을 보여준다. */
+        <div>
+          <InfoRow icon={<InfoIcon name="tag" />} label="공원구분" value={place.parkKind ?? null} muted={!place.parkKind} />
+          <InfoRow
+            icon={<InfoIcon name="area" />}
+            label="면적"
+            value={place.parkArea ? `${Math.round(place.parkArea).toLocaleString()}㎡` : null}
+            muted={!place.parkArea}
+          />
+          <InfoRow
+            icon={<InfoIcon name="facility" />}
+            label="보유시설"
+            value={place.parkFacilities?.length ? place.parkFacilities.join(" · ") : null}
+            muted={!place.parkFacilities?.length}
+          />
+          <InfoRow icon={<InfoIcon name="phone" />} label="전화" value={place.contact} muted={!place.contact} />
+          <InfoRow icon={<InfoIcon name="pin" />} label="관리기관" value={place.institution ?? "국토교통부·지자체"} />
+          <InfoRow icon={<InfoIcon name="note" />} label="출처" value="전국도시공원정보표준데이터(공공데이터포털)" />
+        </div>
       ) : place.source === "custom" ? (
         /* [간단 핀] "가든 핀 등록 도구"로 사람이 직접 넣은 장소라 연락처/홈페이지를 외부에서
            보완할 방법이 없다 — 등록할 때 남긴 메모와 사진이 정보의 전부다. */

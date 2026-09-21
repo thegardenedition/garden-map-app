@@ -284,6 +284,61 @@ function filterCustomBySub(list: Place[], sub: SubId | null): Place[] {
   return sub ? list.filter((p) => p.categoryDepth2 === sub) : list;
 }
 
+interface CityParkRow {
+  id: string;
+  name: string;
+  addr: string;
+  lat: number | string;
+  lng: number | string;
+  tel: string | null;
+  park_kind: string | null;
+  area: number | string | null;
+  f_sports: string | null;
+  f_amusement: string | null;
+  f_convenience: string | null;
+  f_culture: string | null;
+  f_etc: string | null;
+  institution: string | null;
+}
+
+// [전국도시공원정보표준데이터] 국토교통부/지자체가 매년 갱신하는 법정 도시공원 대장
+// (17,558곳). TourAPI(관광지 성격)·한국수목원정원관리원 대장에는 없는 동네 근린공원·
+// 어린이공원·소공원까지 커버한다. 규모가 커서 화면 영역(bbox)으로 좁혀서만 부른다 —
+// browseByCategory의 "확대 안 된 전국 뷰"에는 절대 섞지 않는다(수천 건이 한 번에 온다).
+async function fetchCityParks(bbox: Bbox): Promise<Place[]> {
+  const params = new URLSearchParams({ bbox: bbox.join(",") });
+  try {
+    const res = await fetchWithRetry(`${WORKER_BASE}/citypark?${params}`);
+    const data = await res.json();
+    const rows: CityParkRow[] = data?.results ?? [];
+    return rows.map((r) => {
+      const facilities = [r.f_sports, r.f_amusement, r.f_convenience, r.f_culture, r.f_etc].filter(
+        (f): f is string => Boolean(f && f.trim())
+      );
+      return {
+        placeId: `citypark-${r.id}`,
+        categoryDepth1: "park" as const,
+        categoryDepth2: "city_park" as const,
+        placeName: r.name || "",
+        address: r.addr || "",
+        contact: r.tel || null,
+        coordinates: [Number(r.lng), Number(r.lat)] as [number, number],
+        homepage: null,
+        homepageDirect: null,
+        source: "citypark" as const,
+        distanceM: null,
+        parkKind: r.park_kind || null,
+        parkArea: r.area != null && r.area !== "" ? Number(r.area) : null,
+        parkFacilities: facilities,
+        institution: r.institution || null,
+      };
+    });
+  } catch (err) {
+    console.error("[fetchCityParks] 조회 실패:", err);
+    return [];
+  }
+}
+
 // [카테고리 탐색] 검색어 없이 카테고리만으로 목록을 여는 경로.
 // 예전에는 카테고리 칩이 "이미 검색된 결과를 사후 필터링"하는 역할뿐이라, 검색어를 넣지 않으면
 // 칩을 눌러도 화면이 비어 있었다. 조경회사/자재는 우리 대장에 다 있으므로 검색어 없이도 바로 연다.
@@ -328,8 +383,16 @@ export async function browseByBbox(bbox: Bbox, group: GroupId | null, sub: SubId
     p.coordinates[1] <= maxLat;
 
   if (group === "park") {
-    const [all, custom] = await Promise.all([fetchAllParks(), fetchCustomPins(bbox, "park")]);
-    return mergeDedup(filterCustomBySub(custom, sub), all.filter(inBox));
+    // [우선순위] 커스텀 핀 > (대장·TourAPI 병합 결과) > 도시공원 표준데이터.
+    // 마지막에 놓는 이유: 이미 유명한 공원(대장·TourAPI에 있는 올림픽공원 같은 곳)은 입장료·
+    // 홈페이지처럼 더 풍부한 기존 정보를 유지하고, 도시공원 데이터는 거기 없는 동네 근린공원·
+    // 어린이공원만 순수하게 채워 넣는다(mergeDedup은 "먼저 넘긴 목록이 이긴다").
+    const [all, custom, cityParks] = await Promise.all([
+      fetchAllParks(),
+      fetchCustomPins(bbox, "park"),
+      fetchCityParks(bbox),
+    ]);
+    return mergeDedup(filterCustomBySub(custom, sub), all.filter(inBox), filterCustomBySub(cityParks, sub));
   }
 
   const groups: GroupId[] = group ? [group] : ["company", "material"];
