@@ -23,6 +23,17 @@ import {
  * isRetriableError 를 공유한다 - 4xx 는 즉시 포기, 5xx·네트워크 오류만 재시도.
  */
 
+/*
+ * [규칙] placeholderData: (prev) => prev 를 쓰는 훅은 반드시 isLoading과 isFetching을
+ * 따로 노출해서 호출부가 골라 쓰게 한다. placeholderData가 있으면 재조회 중에도 status가
+ * "success"로 유지돼 isLoading(=isPending && isFetching)이 계속 false다 — "이전 결과가
+ * 있으니 목록을 비우지 마라"는 판단(빈 안내문 게이트)에는 맞지만, "지금 새로 받아오는 중"이라는
+ * 사용자 피드백(로딩 문구)에는 못 쓴다. 이 둘을 하나로 합치면 재조회 중 "검색 중..." 표시가
+ * 사라지거나(피드백 실종), 반대로 목록이 이전 결과 대신 빈 안내문으로 순간 바뀐다(깜빡임 재발).
+ * 새 placeholderData 훅을 추가할 때는 호출부에서 isLoading(목록 게이트 전용)과 isFetching
+ * (로딩 문구 전용)을 각각 그 이름 그대로 꺼내 쓴다 — 하나로 합치지 않는다.
+ */
+
 // [디바운스 / 스로틀]
 // 텍스트 입력(검색어)은 Debounce 300ms: 타이핑이 끝난 뒤에만 API를 호출해 불필요한 요청을 막는다.
 // 지도 이동은 카카오 idle 이벤트가 이미 "멈춤"을 보장하므로 별도 디바운스 없이,
