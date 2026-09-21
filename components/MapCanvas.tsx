@@ -385,28 +385,37 @@ export default function MapCanvas({
   const userMarkerRef = useRef<any>(null);
   const accuracyCircleRef = useRef<any>(null);
   const searchCircleRef = useRef<any>(null);
-  const hoverOverlayRef = useRef<any>(null);
-  // [호버 툴팁 깜빡임 방지] 마커 위에 뜬 툴팁(CustomOverlay)이 실제 화면에서 마커의 픽셀
-  // 영역과 살짝 겹치면, 마우스가 전혀 움직이지 않아도 브라우저가 "지금 가장 위에 있는
-  // 요소"를 다시 계산하면서 마커에 mouseout이 뜨고 → 툴팁이 사라지고 → 마커가 다시
-  // 최상단이 되어 mouseover가 다시 뜨는 식으로 끝없이 되풀이될 수 있다(핀 크기가 커질수록
-  // 겹칠 여지도 커진다). mouseout에서 곧바로 지우지 않고 짧게 미뤘다가, 그 사이 같은 핀에
-  // mouseover가 다시 오면(바로 이 되풀이 상황) 취소해서 화면을 그대로 둔다 — 진짜로 다른
-  // 곳으로 마우스가 떠난 경우에만 실제로 사라진다.
+  /*
+   * [호버 상태 — 세션 객체 하나로 관리, 2026-09-21]
+   * 예전엔 hoverOverlayRef/hoverLiftOverlayRef/hoverLiftImgRef/hoveredPlaceIdRef 네 개를
+   * 따로 두고, mouseout이 80ms 뒤 지연 실행될 때 그 시점의 "현재" ref 값을 다시 읽어서
+   * 지웠다. 마우스가 마커 A에서 B로 빠르게 지나가면(다닥다닥 붙은 핀 사이를 움직일 때
+   * 흔하다) A의 mouseout이 아직 대기 중인 사이 B의 mouseover가 먼저 와서 네 ref를 전부
+   * B 것으로 갈아 끼운다 — 그러면 80ms 뒤 A의 지연 콜백이 깨어나면서 "현재" ref(이미 B의
+   * 것)를 읽어 B가 막 키운 리프트를 scale(1)로 되돌리고 지워버렸다. 사용자 눈에는 B에
+   * 마우스를 가만히 두고 있는데도 핀이 다 키워지자마자 줄어들었다 다시 커지는 것으로
+   * 보였다 — "커졌다 작아졌다" 신고의 실제 원인이다(호버 자체는 문제 없이 매번 새로
+   * 시작되므로 특정 카테고리에 한정되지 않고 전체에서 재현된다).
+   *
+   * 툴팁·리프트 오버레이·이미지·placeId를 하나의 세션 객체로 묶어 hoverSessionRef 하나에
+   * 담는다. mouseout의 지연 콜백은 실행되는 순간 "이 세션이 아직도 현재 세션인지"를
+   * 세션 객체 자체(참조 동일성)로 확인한다 — 그 사이 다른 마커가 새 세션으로 교체했다면
+   * 이 콜백은 아무 것도 하지 않고 조용히 끝난다. 새 마커로 넘어갈 때는 지연 없이 그
+   * 자리에서 바로 이전 세션의 오버레이를 걷어내므로 유령 오버레이가 남지도 않는다.
+   *
+   * [기존 리프트 자체의 근거는 그대로 유효] marker.setImage()로 마커 자체 크기를 바꾸면
+   * 카카오 내부 히트박스도 바뀌어 히트테스트가 스스로 mouseover/mouseout을 다시 쏠 수
+   * 있었다(09-16, 09-18에 고친 문제). 그래서 실제 마커는 호버 중 전혀 건드리지 않고,
+   * 같은 그림을 그린 별도의 pointer-events:none 오버레이만 CSS transform으로 키운다 —
+   * 이 부분은 이번 수정과 무관하게 그대로 유지한다.
+   */
   const hoverHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hoveredPlaceIdRef = useRef<string | null>(null);
-  // [호버 리프트 — CustomOverlay로 승격, 2026-09-18]
-  // 원래는 marker.setImage()로 마커 자체의 크기를 몇 단계 바꿔 "커지는" 효과를 냈는데,
-  // setImage가 카카오 내부 히트박스도 같이 바꾸는 바람에 그때마다 카카오가 히트테스트를
-  // 다시 해서 mouseover/mouseout을 스스로 다시 쏠 수 있었다(위 호버 툴팁 깜빡임과 같은
-  // 근본 원인). 이 되풀이가 리프트→드롭→리프트로 이어지며 두 차례(09-16, 09-18) 타이밍을
-  // 손봐도 핀이 계속 커졌다 작아졌다 하는 문제가 재발했다 — setImage를 쓰는 한 구조적으로
-  // 재발할 수 있는 문제였다. 그래서 "선택된 핀"과 같은 방식으로 바꿨다: 실제 마커는 호버
-  // 중에도 전혀 건드리지 않고, 같은 그림을 그린 별도의 pointer-events:none 오버레이만
-  // CSS transform으로 키운다. 카카오의 마커 히트테스트와 완전히 무관해져 이 종류의 떨림이
-  // 구조적으로 발생할 수 없다.
-  const hoverLiftOverlayRef = useRef<any>(null);
-  const hoverLiftImgRef = useRef<HTMLImageElement | null>(null);
+  const hoverSessionRef = useRef<{
+    placeId: string;
+    tooltip: any;
+    liftOverlay: any;
+    liftImg: HTMLImageElement;
+  } | null>(null);
   const scriptLoadedRef = useRef(false);
   const isDesktopRef = useRef(isDesktop);
   // [핀치 줌 게이트] 실행 시점에 한 번만 확인하면 된다 — 기기의 입력 방식이 세션 중에
@@ -734,7 +743,11 @@ export default function MapCanvas({
       if (accuracyCircleRef.current) accuracyCircleRef.current.setMap(null);
       if (searchCircleRef.current) searchCircleRef.current.setMap(null);
       if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
-      if (hoverOverlayRef.current) hoverOverlayRef.current.setMap(null);
+      if (hoverSessionRef.current) {
+        hoverSessionRef.current.tooltip.setMap(null);
+        hoverSessionRef.current.liftOverlay.setMap(null);
+        hoverSessionRef.current = null;
+      }
       syntheticClusterRef.current.forEach((o) => o.setMap(null));
       syntheticClusterRef.current = [];
       projectMarkersRef.current.forEach((m) => m.setMap(null));
@@ -831,21 +844,14 @@ export default function MapCanvas({
       delete markerPlacesRef.current[id];
       // 지워지는 마커가 마침 호버 중이었다면(마우스가 그대로 있는데 데이터에서만 사라진
       // 경우) 툴팁이 고아로 남지 않도록 같이 정리한다.
-      if (hoveredPlaceIdRef.current === id) {
+      if (hoverSessionRef.current?.placeId === id) {
         if (hoverHideTimerRef.current) {
           clearTimeout(hoverHideTimerRef.current);
           hoverHideTimerRef.current = null;
         }
-        if (hoverOverlayRef.current) {
-          hoverOverlayRef.current.setMap(null);
-          hoverOverlayRef.current = null;
-        }
-        if (hoverLiftOverlayRef.current) {
-          hoverLiftOverlayRef.current.setMap(null);
-          hoverLiftOverlayRef.current = null;
-          hoverLiftImgRef.current = null;
-        }
-        hoveredPlaceIdRef.current = null;
+        hoverSessionRef.current.tooltip.setMap(null);
+        hoverSessionRef.current.liftOverlay.setMap(null);
+        hoverSessionRef.current = null;
       }
     }
     if (toRemove.length) {
@@ -890,45 +896,51 @@ export default function MapCanvas({
           }
           const current = markerPlacesRef.current[placeId];
           if (!current) return;
-          if (!(hoveredPlaceIdRef.current === placeId && hoverOverlayRef.current)) {
-            if (hoverOverlayRef.current) hoverOverlayRef.current.setMap(null);
-            hoverOverlayRef.current = new kakao.maps.CustomOverlay({
-              position: marker.getPosition(),
-              content: hoverTooltipHtml(current),
-              yAnchor: 1,
-              zIndex: MAP_OVERLAY_Z.hoverTooltip,
-            });
-            hoverOverlayRef.current.setMap(map);
-            hoveredPlaceIdRef.current = placeId;
+          if (hoverSessionRef.current?.placeId === placeId) return; // 이미 이 핀을 보여주는 중
 
-            // [호버 리프트] 실제 마커(marker.setImage)는 전혀 건드리지 않는다. 같은 그림을
-            // 그린 별도 오버레이를 하나 더 얹고 그것만 CSS transform으로 키운다 —
-            // pointer-events:none이라 이 오버레이는 어떤 마우스 이벤트도 가로채지 않고,
-            // 카카오의 마커 히트테스트와도 완전히 무관하다(위 refs 선언부 설명 참고).
-            const size = pinSizeRef.current;
-            const img = document.createElement("img");
-            img.src = svgDataUri(placePinSvg(current.categoryDepth1, current.categoryDepth2, false));
-            img.width = size.width;
-            img.height = size.height;
-            img.style.cssText =
-              `display:block;pointer-events:none;transform-origin:${size.anchorX}px ${size.anchorY}px;` +
-              "transform:scale(1);transition:transform 120ms ease-out;";
-            hoverLiftImgRef.current = img;
-            hoverLiftOverlayRef.current = new kakao.maps.CustomOverlay({
-              position: marker.getPosition(),
-              content: img,
-              xAnchor: size.anchorX / size.width,
-              yAnchor: size.anchorY / size.height,
-              zIndex: MAP_OVERLAY_Z.hoverLift,
-            });
-            hoverLiftOverlayRef.current.setMap(map);
-            // scale(1) 상태가 먼저 한 프레임 그려진 뒤에 목표 값으로 바꿔야 transition이
-            // 실제로 재생된다 — 같은 프레임에서 바로 바꾸면 브라우저가 전환을 생략하고
-            // 곧장 최종 상태로 그릴 수 있다.
-            requestAnimationFrame(() => {
-              if (hoverLiftImgRef.current === img) img.style.transform = "scale(1.15)";
-            });
+          // 다른 핀의 세션이 아직 남아 있다면(지연 없이) 바로 걷어낸다 — 유령 오버레이 방지.
+          if (hoverSessionRef.current) {
+            hoverSessionRef.current.tooltip.setMap(null);
+            hoverSessionRef.current.liftOverlay.setMap(null);
           }
+
+          const tooltip = new kakao.maps.CustomOverlay({
+            position: marker.getPosition(),
+            content: hoverTooltipHtml(current),
+            yAnchor: 1,
+            zIndex: MAP_OVERLAY_Z.hoverTooltip,
+          });
+          tooltip.setMap(map);
+
+          // [호버 리프트] 실제 마커(marker.setImage)는 전혀 건드리지 않는다. 같은 그림을
+          // 그린 별도 오버레이를 하나 더 얹고 그것만 CSS transform으로 키운다 —
+          // pointer-events:none이라 이 오버레이는 어떤 마우스 이벤트도 가로채지 않고,
+          // 카카오의 마커 히트테스트와도 완전히 무관하다(위 refs 선언부 설명 참고).
+          const size = pinSizeRef.current;
+          const img = document.createElement("img");
+          img.src = svgDataUri(placePinSvg(current.categoryDepth1, current.categoryDepth2, false));
+          img.width = size.width;
+          img.height = size.height;
+          img.style.cssText =
+            `display:block;pointer-events:none;transform-origin:${size.anchorX}px ${size.anchorY}px;` +
+            "transform:scale(1);transition:transform 120ms ease-out;";
+          const liftOverlay = new kakao.maps.CustomOverlay({
+            position: marker.getPosition(),
+            content: img,
+            xAnchor: size.anchorX / size.width,
+            yAnchor: size.anchorY / size.height,
+            zIndex: MAP_OVERLAY_Z.hoverLift,
+          });
+          liftOverlay.setMap(map);
+
+          const session = { placeId, tooltip, liftOverlay, liftImg: img };
+          hoverSessionRef.current = session;
+          // scale(1) 상태가 먼저 한 프레임 그려진 뒤에 목표 값으로 바꿔야 transition이
+          // 실제로 재생된다 — 같은 프레임에서 바로 바꾸면 브라우저가 전환을 생략하고
+          // 곧장 최종 상태로 그릴 수 있다.
+          requestAnimationFrame(() => {
+            if (hoverSessionRef.current === session) img.style.transform = "scale(1.15)";
+          });
         });
         kakao.maps.event.addListener(marker, "mouseout", () => {
           if (!isDesktopRef.current) return;
@@ -937,26 +949,27 @@ export default function MapCanvas({
           // 곳으로 떠난 경우에만 아래가 실행되어 툴팁이 사라지고 핀도 원래 크기로 돌아간다.
           if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
           hoverHideTimerRef.current = setTimeout(() => {
-            if (hoverOverlayRef.current) {
-              hoverOverlayRef.current.setMap(null);
-              hoverOverlayRef.current = null;
-            }
-            hoveredPlaceIdRef.current = null;
             hoverHideTimerRef.current = null;
-            const img = hoverLiftImgRef.current;
-            if (img) {
-              img.style.transform = "scale(1)";
-              // transition이 끝날 시간을 준 뒤 오버레이를 걷어낸다. img===img 체크로, 그
-              // 사이 새 호버가 시작돼 새 오버레이로 교체됐다면 이 오래된 타이머가 새 것을
-              // 잘못 지우지 않게 한다.
-              setTimeout(() => {
-                if (hoverLiftImgRef.current === img) {
-                  hoverLiftOverlayRef.current?.setMap(null);
-                  hoverLiftOverlayRef.current = null;
-                  hoverLiftImgRef.current = null;
-                }
-              }, 130);
-            }
+            // [핵심 수정] 이 사이 다른 마커로 호버가 넘어갔다면(마우스가 붙어 있는 핀
+            // 사이를 지나가며 이 mouseout이 지연된 채로 남아 있는 동안 다른 핀의
+            // mouseover가 이미 새 세션을 만들었다면) 이 지연 콜백은 지금의 "진짜 호버
+            // 대상"이 아니므로 아무 것도 건드리지 않는다. 예전에는 여기서 "현재" ref를
+            // 무조건 읽어와 지웠기 때문에, 막 다른 핀으로 넘어가 커진 리프트를 이 오래된
+            // mouseout이 스스로 줄이고 지워버렸다 — 사용자에게는 방금 가만히 올려둔 핀이
+            // 저절로 커졌다 작아지는 것으로 보였다.
+            const session = hoverSessionRef.current;
+            if (!session || session.placeId !== placeId) return;
+            session.tooltip.setMap(null);
+            session.liftImg.style.transform = "scale(1)";
+            // transition이 끝날 시간을 준 뒤 오버레이를 걷어낸다. 세션 참조 동일성으로, 그
+            // 사이 새 호버가 시작돼 새 세션으로 교체됐다면 이 오래된 타이머가 새 것을
+            // 잘못 지우지 않게 한다.
+            setTimeout(() => {
+              if (hoverSessionRef.current === session) {
+                session.liftOverlay.setMap(null);
+                hoverSessionRef.current = null;
+              }
+            }, 130);
           }, 80);
         });
       }
