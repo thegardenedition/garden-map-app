@@ -298,35 +298,57 @@ export interface MapCanvasHandle {
  * 터치 기기에는 붙이지 않는다. 모바일 브라우저는 탭에도 mouseover 를 쏘기 때문에, 손가락을
  * 뗀 뒤에도 툴팁이 남아 지도를 가린다.
  */
-function escapeHtml(v: string): string {
-  return String(v ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function hoverTooltipHtml(place: Place): string {
+/*
+ * [호버 툴팁의 자가유발 mouseout — 2026-09-21]
+ * peer 세션이 라이브 번들 + CDP로 확정: 카카오 CustomOverlay에 HTML 문자열을 넘기면
+ * 카카오가 그 문자열을 담을 자기 wrapper div를 하나 더 만든다. 우리가 문자열 안에
+ * "pointer-events:none"을 걸어도 그건 우리 div(카카오 wrapper의 자식) 얘기일 뿐,
+ * 카카오가 만든 바깥 wrapper 자체는 그대로 기본값(auto)이다. 커서가 그 자리에 오면
+ * 히트테스트가 (pointer-events:none인) 우리 div는 건너뛰고 바로 밑에 있는, 같은
+ * 자리를 차지한 카카오 wrapper에서 잡힌다 — 그 wrapper가 마커보다 위(zIndex 100)에
+ * 있어서 마커에 스스로 mouseout이 뜨고, 툴팁이 사라지면 커서가 다시 마커 위가 되어
+ * mouseover가 다시 뜨고, 툴팁이 다시 나 커서를 다시 덮고... 하는 자가 순환이 "커졌다
+ * 작아졌다"로 보였다(마우스는 한 번도 안 움직였는데도 반복).
+ *
+ * 리프트 오버레이(아래 hoverLiftOverlayRef가 그리는 <img>)는 원래부터 문자열이 아니라
+ * 실제 DOM 요소를 직접 만들어 pointer-events:none을 그 요소 자신에게 거는 방식이라
+ * 이 문제가 없었다. 툴팁도 같은 방식으로 통일한다: 문자열 대신 DOM 요소를 직접 만들어
+ * 카카오에 넘긴다.
+ *
+ * [겹침 자체도 줄인다] 툴팁을 위로 띄우는 offset이 -46px로 고정돼 있었는데, 이건
+ * PIN_DEFAULT(43px 높이) 기준이라 PIN_HERO(50px)·PIN_SELECTED(58px)처럼 더 큰 핀에서는
+ * 핀의 둥근 윗부분이 그 46px 안쪽으로 올라와 툴팁과 겹칠 여지가 남는다(실측: 핀 상단부에
+ * 커서를 두면 재현). pointer-events 수정과 별개로, 지금 화면의 실제 핀 높이(size.height)
+ * 기준으로 여유를 두고 띄운다.
+ */
+function hoverTooltipElement(place: Place, size: PinSize): HTMLDivElement {
   const sub = SUB_DEFS[place.categoryDepth1]?.find((d) => d.id === place.categoryDepth2)?.label ?? "";
   const dist = formatDistance(place.distanceM);
   const meta = [sub, dist].filter(Boolean).join(" · ");
-  // pointer-events:none 이 중요하다. 툴팁이 마우스를 가로채면 그 즉시 mouseout 이 떠서
-  // 툴팁이 깜빡이고, 핀 클릭도 막힌다.
-  return (
-    '<div style="pointer-events:none;transform:translateY(-46px);max-width:260px;' +
-    'background:#fff;color:#06107D;border-radius:12px;padding:9px 12px;' +
-    'box-shadow:0 6px 20px rgba(0,0,0,0.22);font-size:12.5px;line-height:1.45;">' +
-    '<div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
-    escapeHtml(place.placeName) +
-    "</div>" +
-    (meta ? '<div style="opacity:0.62;font-size:11.5px;margin-top:1px;">' + escapeHtml(meta) + "</div>" : "") +
-    (place.address
-      ? '<div style="opacity:0.75;font-size:11.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
-        escapeHtml(place.address) +
-        "</div>"
-      : "") +
-    "</div>"
-  );
+  const gap = size.height + 12; // 핀 전체 높이 + 여유 — 어떤 크기 핀이든 몸통과 안 겹친다.
+  const el = document.createElement("div");
+  el.style.cssText =
+    `pointer-events:none;transform:translateY(-${gap}px);max-width:260px;` +
+    "background:#fff;color:#06107D;border-radius:12px;padding:9px 12px;" +
+    "box-shadow:0 6px 20px rgba(0,0,0,0.22);font-size:12.5px;line-height:1.45;";
+  const nameEl = document.createElement("div");
+  nameEl.style.cssText = "font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+  nameEl.textContent = place.placeName;
+  el.appendChild(nameEl);
+  if (meta) {
+    const metaEl = document.createElement("div");
+    metaEl.style.cssText = "opacity:0.62;font-size:11.5px;margin-top:1px;";
+    metaEl.textContent = meta;
+    el.appendChild(metaEl);
+  }
+  if (place.address) {
+    const addrEl = document.createElement("div");
+    addrEl.style.cssText =
+      "opacity:0.75;font-size:11.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+    addrEl.textContent = place.address;
+    el.appendChild(addrEl);
+  }
+  return el;
 }
 
 export default function MapCanvas({
@@ -921,9 +943,10 @@ export default function MapCanvas({
             hoverSessionRef.current.liftOverlay.setMap(null);
           }
 
+          const size = pinSizeRef.current;
           const tooltip = new kakao.maps.CustomOverlay({
             position: marker.getPosition(),
-            content: hoverTooltipHtml(current),
+            content: hoverTooltipElement(current, size),
             yAnchor: 1,
             zIndex: MAP_OVERLAY_Z.hoverTooltip,
           });
@@ -933,7 +956,6 @@ export default function MapCanvas({
           // 그린 별도 오버레이를 하나 더 얹고 그것만 CSS transform으로 키운다 —
           // pointer-events:none이라 이 오버레이는 어떤 마우스 이벤트도 가로채지 않고,
           // 카카오의 마커 히트테스트와도 완전히 무관하다(위 refs 선언부 설명 참고).
-          const size = pinSizeRef.current;
           const img = document.createElement("img");
           img.src = svgDataUri(placePinSvg(current.categoryDepth1, current.categoryDepth2, false));
           img.width = size.width;
