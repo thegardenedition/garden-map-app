@@ -185,11 +185,32 @@ export default function Page() {
 
   // [체감 속도] 로딩 표시는 빠른 조경회사/자재 쿼리 기준으로만 판단한다. 공원 데이터는 뒤에서
   // 채워지며, 다 로드되기를 기다리지 않고 화면을 먼저 보여준다.
+  // [진짜 첫 로딩 vs 갱신 중인지] isLoading은 데이터가 아예 없을 때만 true다(placeholderData
+  // 덕분에 재검색·필터 전환 중엔 이미 "이전 결과"가 있어 false) — 목록을 빈 안내문으로
+  // 되돌릴지 판단하는 데 쓴다. 아래 isFetchingResults는 갱신 중이면 언제나 true라 "검색
+  // 중..." 문구 전용이다. 이 둘을 하나로 합치면(예전 버전) 재검색 순간 목록이 이전 결과 대신
+  // "검색어를 입력해주세요" 빈 안내문으로 바뀌어 버린다 — placeholderData로 막은 깜빡임이
+  // 다른 모습으로 되돌아오는 것이다.
   const isLoading = isNearbyMode
     ? nearbyQuery.isLoading
     : isBrowseMode
     ? browseQuery.isLoading
     : bizQuery.isLoading;
+  /*
+   * [재검색 중임을 알려야 한다]
+   * 검색·내 주변 쿼리에 placeholderData를 넣은 뒤로 isLoading(=isPending && isFetching)은
+   * 첫 조회에서만 true다. 두 번째 검색부터는 상태가 이미 "success"(이전 결과를 placeholder로
+   * 보여주는 중)라 isPending이 꺼져 있어, isLoading만 보면 새 결과가 오는 동안에도 "검색
+   * 중..." 표시 없이 이전 건수만 그대로 보여준다. 재검색 버튼을 눌렀는데 아무 반응이 없어
+   * 보이면 사용자는 "안 눌렸나?" 하고 다시 누른다. 탐색(지도 팬)은 원래도 이랬고 지도 자체가
+   * 움직이니 괜찮지만, 검색·내 주변은 버튼을 누르는 명시적 동작이라 isFetching으로 갱신
+   * 중임을 계속 알려준다.
+   */
+  const isFetchingResults = isNearbyMode
+    ? nearbyQuery.isFetching
+    : isBrowseMode
+    ? browseQuery.isLoading
+    : bizQuery.isFetching;
 
   const places: Place[] = useMemo(() => {
     const list = rawPlaces ?? [];
@@ -383,6 +404,7 @@ export default function Page() {
           places={places}
           hasSearched={hasSearched}
           isLoading={isLoading}
+          isFetching={isFetchingResults}
           activeGroupLabel={activeGroupLabel}
           selectedPlace={selectedPlace}
           region={region}
@@ -582,7 +604,7 @@ export default function Page() {
           <span className="tp-caption min-w-0 truncate text-[var(--color-deep-blue)]">
             {statusLabel}
             <span className="ml-1.5 text-[11px] font-normal text-[#8A90B4]">
-              {isLoading ? "검색 중..." : hasSearched ? `${places.length}곳${activeGroupLabel ? ` · ${activeGroupLabel}` : ""}` : ""}
+              {isFetchingResults ? "검색 중..." : hasSearched ? `${places.length}곳${activeGroupLabel ? ` · ${activeGroupLabel}` : ""}` : ""}
             </span>
           </span>
         </div>

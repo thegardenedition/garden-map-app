@@ -16,6 +16,7 @@ export default function Sidebar({
   places,
   hasSearched,
   isLoading,
+  isFetching,
   activeGroupLabel,
   selectedPlace,
   region,
@@ -31,7 +32,12 @@ export default function Sidebar({
   locating: boolean;
   places: Place[];
   hasSearched: boolean;
+  // [진짜 첫 로딩 vs 갱신 중] isLoading은 데이터가 아예 없는 첫 조회에서만 true다(목록을
+  // "검색어를 입력해주세요"로 비울지 판단하는 데 쓴다 — placeholderData로 이전 결과가 떠 있는
+  // 동안은 false). isFetching은 갱신 중이면 언제나 true라 "검색 중..." 문구 전용이다. 이 둘을
+  // 하나로 합치면 재검색할 때 목록이 이전 결과 대신 빈 안내문으로 순간 바뀌어 버린다.
   isLoading: boolean;
+  isFetching: boolean;
   activeGroupLabel: string | null;
   selectedPlace: Place | null;
   region: Region;
@@ -131,7 +137,7 @@ export default function Sidebar({
         )}
       </div>
       <div className="px-6 pb-2 pt-1 text-[11px] text-white/50">
-        {isLoading ? "검색 중..." : hasSearched ? `${places.length}곳 표시 중${activeGroupLabel ? ` (${activeGroupLabel})` : ""}` : ""}
+        {isFetching ? "검색 중..." : hasSearched ? `${places.length}곳 표시 중${activeGroupLabel ? ` (${activeGroupLabel})` : ""}` : ""}
       </div>
 
       <div className="mt-1.5 flex flex-1 flex-col overflow-hidden rounded-t-[20px] bg-white text-[#0A0A23]">
