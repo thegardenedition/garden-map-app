@@ -76,6 +76,10 @@ export function useBizSearch(region: Region, keyword: string): UseQueryResult<Pl
     retry: (count, err) => isRetriableError(err) && count < 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     staleTime: 60_000,
+    // [검색 중 핀 소실·상세시트 닫힘 방지] 이게 없으면 타이핑 디바운스가 끝날 때마다
+    // queryKey가 바뀌어 data가 잠깐 undefined가 된다 — 핀이 순간 사라졌다 다시 나타나고,
+    // 그 사이 선택돼 있던 장소도 places 목록에서 빠져 상세 시트가 저절로 닫혔다.
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -91,6 +95,8 @@ export function useParkSearch(keyword: string): UseQueryResult<Place[]> {
     retry: (count, err) => isRetriableError(err) && count < 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     staleTime: 5 * 60_000,
+    // useBizSearch와 같은 이유 — 검색어가 바뀔 때마다 공원 목록이 비었다 채워지는 깜빡임을 막는다.
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -144,6 +150,9 @@ export function useNearbySearch(
     retry: (count, err) => isRetriableError(err) && count < 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     staleTime: 30_000,
+    // group도 queryKey에 들어 있어 필터 칩을 누를 때마다 새 쿼리키가 된다 — 그때마다
+    // data가 비면 같은 종류의 핀 소실·상세시트 닫힘이 재현된다.
+    placeholderData: (prev) => prev,
   });
 }
 
