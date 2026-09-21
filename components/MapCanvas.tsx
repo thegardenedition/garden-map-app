@@ -351,6 +351,22 @@ function hoverTooltipElement(place: Place, size: PinSize): HTMLDivElement {
   return el;
 }
 
+// [카카오 wrapper 차단 — 타이밍 방어] overlay.setMap(map) 직후 el.parentElement가 바로
+// 카카오 wrapper라고 확인했지만(peer 세션 실측), 카카오가 그 연결을 다음 프레임에서야
+// 붙이는 구현일 가능성까지 배제하지 않는다. 그 순간 null이면 이 호출은 조용히 아무 일도
+// 안 하고 끝나 버그가 그대로 남는다 — 한 프레임 뒤에도 못 붙었으면 다시 시도해 이 경우를
+// 방어한다(같은 요소가 이미 지도에서 떨어져 나갔으면(parentElement가 여전히 없으면) 그냥
+// 넘어간다, 오류를 던지지 않는다).
+function lockWrapperPointerEvents(el: HTMLElement) {
+  if (el.parentElement) {
+    el.parentElement.style.pointerEvents = "none";
+    return;
+  }
+  requestAnimationFrame(() => {
+    if (el.parentElement) el.parentElement.style.pointerEvents = "none";
+  });
+}
+
 export default function MapCanvas({
   places,
   selectedPlaceId,
@@ -944,13 +960,30 @@ export default function MapCanvas({
           }
 
           const size = pinSizeRef.current;
+          const tooltipEl = hoverTooltipElement(current, size);
           const tooltip = new kakao.maps.CustomOverlay({
             position: marker.getPosition(),
-            content: hoverTooltipElement(current, size),
+            content: tooltipEl,
             yAnchor: 1,
             zIndex: MAP_OVERLAY_Z.hoverTooltip,
           });
           tooltip.setMap(map);
+          /*
+           * [진짜 근본 수정 — 2026-09-21, peer 세션 라이브 DOM 실측]
+           * 카카오 CustomOverlay는 우리가 넘긴 content(DOM 요소든 문자열이든)를 자기
+           * wrapper div로 한 번 더 감싸고, 그 wrapper에 우리가 지정한 zIndex를 붙인다.
+           * 우리 요소(tooltipEl) 자신에게 pointer-events:none을 걸어도 그건 wrapper의
+           * 자식 얘기일 뿐 — elementFromPoint가 (none인) 자식은 건너뛰고 곧장 그 부모
+           * wrapper에서 잡힌다. wrapper는 우리가 손댄 적이 없어 기본값(auto)으로 남고,
+           * zIndex 100(마커보다 위)이라 커서를 가로챈다. 실측: 우리 div는 pe:none이
+           * 맞았지만 그 parentElement(카카오 wrapper)가 pe:auto·핀과 같은 자리였다.
+           * translateY로 시각적으로만 올려도 wrapper의 히트박스는 원래 자리(핀 위치)
+           * 그대로라 겹침이 사라지지 않았다.
+           * 우리 요소가 DOM에 붙은 지금(setMap 직후) parentElement가 바로 그 카카오
+           * wrapper다 — 그 wrapper 자체에 직접 pointer-events:none을 걸어 위치·전략과
+           * 무관하게 가로채기를 원천 차단한다.
+           */
+          lockWrapperPointerEvents(tooltipEl);
 
           // [호버 리프트] 실제 마커(marker.setImage)는 전혀 건드리지 않는다. 같은 그림을
           // 그린 별도 오버레이를 하나 더 얹고 그것만 CSS transform으로 키운다 —
@@ -971,6 +1004,9 @@ export default function MapCanvas({
             zIndex: MAP_OVERLAY_Z.hoverLift,
           });
           liftOverlay.setMap(map);
+          // 리프트 오버레이의 카카오 wrapper도 같은 이유로 직접 막아둔다(지난 계측에서는
+          // 이미 안전한 것으로 보였지만, 근거 없이 우연에 기대지 않는다).
+          lockWrapperPointerEvents(img);
 
           const session = { placeId, tooltip, liftOverlay, liftImg: img };
           hoverSessionRef.current = session;
