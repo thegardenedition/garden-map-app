@@ -351,6 +351,22 @@ function hoverTooltipElement(place: Place, size: PinSize): HTMLDivElement {
   return el;
 }
 
+// [카카오 wrapper 차단 — 타이밍 방어] overlay.setMap(map) 직후 el.parentElement가 바로
+// 카카오 wrapper라고 확인했지만(peer 세션 실측), 카카오가 그 연결을 다음 프레임에서야
+// 붙이는 구현일 가능성까지 배제하지 않는다. 그 순간 null이면 이 호출은 조용히 아무 일도
+// 안 하고 끝나 버그가 그대로 남는다 — 한 프레임 뒤에도 못 붙었으면 다시 시도해 이 경우를
+// 방어한다(같은 요소가 이미 지도에서 떨어져 나갔으면(parentElement가 여전히 없으면) 그냥
+// 넘어간다, 오류를 던지지 않는다).
+function lockWrapperPointerEvents(el: HTMLElement) {
+  if (el.parentElement) {
+    el.parentElement.style.pointerEvents = "none";
+    return;
+  }
+  requestAnimationFrame(() => {
+    if (el.parentElement) el.parentElement.style.pointerEvents = "none";
+  });
+}
+
 export default function MapCanvas({
   places,
   selectedPlaceId,
@@ -967,7 +983,7 @@ export default function MapCanvas({
            * wrapper다 — 그 wrapper 자체에 직접 pointer-events:none을 걸어 위치·전략과
            * 무관하게 가로채기를 원천 차단한다.
            */
-          if (tooltipEl.parentElement) tooltipEl.parentElement.style.pointerEvents = "none";
+          lockWrapperPointerEvents(tooltipEl);
 
           // [호버 리프트] 실제 마커(marker.setImage)는 전혀 건드리지 않는다. 같은 그림을
           // 그린 별도 오버레이를 하나 더 얹고 그것만 CSS transform으로 키운다 —
@@ -990,7 +1006,7 @@ export default function MapCanvas({
           liftOverlay.setMap(map);
           // 리프트 오버레이의 카카오 wrapper도 같은 이유로 직접 막아둔다(지난 계측에서는
           // 이미 안전한 것으로 보였지만, 근거 없이 우연에 기대지 않는다).
-          if (img.parentElement) img.parentElement.style.pointerEvents = "none";
+          lockWrapperPointerEvents(img);
 
           const session = { placeId, tooltip, liftOverlay, liftImg: img };
           hoverSessionRef.current = session;
