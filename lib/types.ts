@@ -35,7 +35,10 @@ export interface Place {
   // 상세를 채우므로 카카오/투어API 후속 요청을 걸지 않는다.
   // custom = "가든 핀 등록 도구"(app/admin)로 사람이 직접 넣은 장소. 대장·카카오·네이버처럼
   // 외부 조회로 보완할 연락처/홈페이지가 없으므로 후속 요청을 걸지 않는다(note가 유일한 설명).
-  source: "kakao" | "tourapi" | "registry" | "custom";
+  // citypark = 전국도시공원정보표준데이터(국토교통부/지자체). TourAPI·한국수목원정원관리원
+  // 대장에 없는 동네 근린공원·어린이공원·소공원까지 커버한다. 좌표가 이미 있어 지오코딩이
+  // 필요 없고, 법정 공원구분·보유시설처럼 이 소스에만 있는 값이 있다.
+  source: "kakao" | "tourapi" | "registry" | "custom" | "citypark";
   distanceM: number | null; // 내 주변 찾기(반경 검색)일 때만 채워짐
   usetime?: string | null;
   restdate?: string | null;
@@ -54,6 +57,11 @@ export interface Place {
   // 네이버 지역검색이 주는 업체 한 줄 소개. 카카오·D1 대장에는 대응 값이 없어 kakao 출처
   // 전체가 아니라 네이버로 보완된 항목에만 채워진다.
   description?: string | null;
+  // 아래 다섯은 citypark(전국도시공원정보표준데이터)에만 있는 값이다.
+  parkKind?: string | null; // 법정 공원구분(어린이공원/근린공원/소공원/체육공원/문화공원 등)
+  parkArea?: number | null; // 공원면적(㎡)
+  parkFacilities?: string[]; // 보유시설(운동/유희/편익/교양/기타) 중 값이 있는 것만
+  institution?: string | null; // 관리기관명
 }
 
 // 목록과 지도 툴팁이 같은 규칙으로 거리를 쓰도록 여기 둔다. 화면 문구용 상수(GROUP_LABEL 등)가

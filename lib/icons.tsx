@@ -283,7 +283,9 @@ export type InfoIconName =
   | "clock"
   | "parking"
   | "note"
-  | "tag";
+  | "tag"
+  | "area"
+  | "facility";
 
 export const INFO_ICON_PATHS: Record<InfoIconName, string> = {
   phone: '<rect x="8" y="2.8" width="8" height="18.4" rx="2"/><path d="M10.5 5.4h3"/><path d="M11 17.6h2"/>',
@@ -299,6 +301,10 @@ export const INFO_ICON_PATHS: Record<InfoIconName, string> = {
   note:
     '<path d="M6 3.6h9l3.4 3.4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.6a1 1 0 0 1 1-1z"/><path d="M8.4 12h7.2"/><path d="M8.4 15.6h7.2"/><path d="M8.4 8.4h4"/>',
   tag: '<path d="M4 4.6h7.4a1 1 0 0 1 .7.3l7.9 7.9a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-7.9-7.9a1 1 0 0 1-.3-.7V5.6a1 1 0 0 1 1-1z"/><circle cx="8.2" cy="9" r="1.4"/>',
+  // 면적(자/눈금) — 공원면적을 나타낼 때만 쓴다.
+  area: '<rect x="3.6" y="3.6" width="16.8" height="16.8" rx="2"/><path d="M8 3.6v3"/><path d="M12 3.6v3.6"/><path d="M16 3.6v3"/><path d="M3.6 8h3"/><path d="M3.6 12h3.6"/><path d="M3.6 16h3"/>',
+  // 보유시설(그리드) — 운동·유희·편익시설처럼 여러 항목을 한 줄로 묶어 보여줄 때.
+  facility: '<rect x="3.6" y="3.6" width="7.2" height="7.2" rx="1.2"/><rect x="13.2" y="3.6" width="7.2" height="7.2" rx="1.2"/><rect x="3.6" y="13.2" width="7.2" height="7.2" rx="1.2"/><rect x="13.2" y="13.2" width="7.2" height="7.2" rx="1.2"/>',
 };
 
 export function InfoIcon({
