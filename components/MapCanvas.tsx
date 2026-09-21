@@ -366,6 +366,13 @@ export default function MapCanvas({
   // 줌이 바뀌면 이미 올려둔 마커의 이미지를 다시 만들어야 한다. 그러려면 마커마다 어떤 장소인지
   // 알아야 하므로 나란히 들고 있는다(markersRef 의 값 모양을 바꾸면 쓰는 곳이 다섯 군데라 위험).
   const markerPlacesRef = useRef<Record<string, Place>>({});
+  // [호버 보존 유예의 뒷정리용] 호버 중인 마커는 이번 places에 없어도 즉시 안 지우고 보존한다
+  // (아래 마커 렌더링 이펙트 참고) — 그런데 그게 재조회 스침이 아니라 정말로 없어진 장소라면,
+  // 마우스가 그 핀을 뜨는 순간(mouseout) 다음 렌더를 기다리지 않고 바로 지워야 한다. 지도가
+  // 그 뒤로 한동안 움직이지 않으면(스크롤/줌이 없으면) 렌더링 이펙트가 다시 안 돌아 유령
+  // 마커가 계속 남을 수 있기 때문이다. 렌더링 이펙트가 돌 때마다 "지금 진짜로 있어야 할
+  // placeId 집합"을 여기 적어 두고, mouseout 쪽에서 그 집합에 없으면 그 자리에서 직접 지운다.
+  const validPlaceIdsRef = useRef<Set<string>>(new Set());
   const pinWidthRef = useRef<number>(PIN_DEFAULT.width);
   // [현재 기준 크기] pinWidthRef가 폭 숫자만 들고 있어 팝인/호버 애니메이션이 스케일 계산에
   // 쓸 PinSize 전체(앵커 포함)가 필요할 때마다 다시 찾아야 했다. 같은 값을 객체로도 들고 있는다.
@@ -834,25 +841,35 @@ export default function MapCanvas({
     pinSizeRef.current = currentPinSize;
 
     const nextIds = new Set(places.map((p) => p.placeId));
+    validPlaceIdsRef.current = nextIds;
 
     // 화면에서 사라진 장소의 마커만 지운다.
     const toRemove: any[] = [];
     for (const [id, marker] of Object.entries(markersRef.current)) {
       if (nextIds.has(id)) continue;
+      /*
+       * [호버 중인 마커는 데이터에서 잠깐 빠져도 건드리지 않는다 — 2026-09-21]
+       * 검색·탐색 쿼리가 백그라운드에서 다시 조회될 때(예: 창 포커스 복귀, bbox 경계에서의
+       * 응답 순서 뒤바뀜) 같은 화면인데도 이번 places 목록에 특정 장소 하나가 한 박자
+       * 빠졌다가 바로 다음 갱신에 다시 나타나는 경우가 실측으로 확인됐다(대표 신고: 마우스를
+       * 옆 핀 없이 가만히 올려둬도 커졌다 작아진다 / CDP 계측: mouseout 없이 리프트 오버레이가
+       * 사라짐, mousemove 없이 mouseover가 재발화).
+       *
+       * 예전 코드는 이럴 때마다 그 마커를 진짜로 지우고(toRemove) 호버 오버레이도 같이
+       * 걷어냈다 — 그러면 다음 갱신에서 같은 자리에 완전히 새로운 kakao.maps.Marker가
+       * 다시 만들어지는데, 마우스는 그 자리에 그대로 있으니 카카오가 그 새 마커에 대해
+       * 아무 움직임 없이도 mouseover를 스스로 다시 쏜다 — 사용자 눈에는 "가만히 있는데
+       * 핀이 줄었다 다시 커지는" 것으로 보였다.
+       *
+       * 지금 호버 중인 마커라면 이번 목록에 없어도 지우지 않고 그대로 둔다. 진짜로
+       * 없어진 것이라면(재조회 스침이 아니라면) 사용자가 마우스를 뗄 때 mouseout이 정상
+       * 발생해 호버 세션이 끝나고, 그다음 렌더에서 더 이상 보호 대상이 아니므로 그때
+       * 지워진다 — 최악의 경우에도 "마우스를 뗄 때까지" 만큼만 늦게 지워질 뿐이다.
+       */
+      if (hoverSessionRef.current?.placeId === id) continue;
       toRemove.push(marker);
       delete markersRef.current[id];
       delete markerPlacesRef.current[id];
-      // 지워지는 마커가 마침 호버 중이었다면(마우스가 그대로 있는데 데이터에서만 사라진
-      // 경우) 툴팁이 고아로 남지 않도록 같이 정리한다.
-      if (hoverSessionRef.current?.placeId === id) {
-        if (hoverHideTimerRef.current) {
-          clearTimeout(hoverHideTimerRef.current);
-          hoverHideTimerRef.current = null;
-        }
-        hoverSessionRef.current.tooltip.setMap(null);
-        hoverSessionRef.current.liftOverlay.setMap(null);
-        hoverSessionRef.current = null;
-      }
     }
     if (toRemove.length) {
       clusterer.removeMarkers(toRemove);
@@ -968,6 +985,17 @@ export default function MapCanvas({
               if (hoverSessionRef.current === session) {
                 session.liftOverlay.setMap(null);
                 hoverSessionRef.current = null;
+                // [유예 중 보존한 마커의 뒷정리] 호버 중이라 렌더링 이펙트가 지우지 않고
+                // 봐준 마커였는데, 마우스가 뜬 지금도 여전히 실제 목록(validPlaceIdsRef)에
+                // 없다면 재조회 스침이 아니라 정말로 없어진 장소다 — 다음 렌더까지
+                // 기다리지 않고 지금 바로 지운다. 지도가 한동안 안 움직이면 다음 렌더가
+                // 없어 유령 마커로 남을 수 있기 때문이다.
+                if (!validPlaceIdsRef.current.has(placeId) && markersRef.current[placeId] === marker) {
+                  clusterer.removeMarkers([marker]);
+                  marker.setMap(null);
+                  delete markersRef.current[placeId];
+                  delete markerPlacesRef.current[placeId];
+                }
               }
             }, 130);
           }, 80);
