@@ -21,7 +21,7 @@ export default function Page() {
   const queryClient = useQueryClient();
   const region = useGardenMapStore((s) => s.region);
   const searchTerm = useGardenMapStore((s) => s.searchTerm);
-  const activeGroup = useGardenMapStore((s) => s.activeGroup);
+  const activeGroups = useGardenMapStore((s) => s.activeGroups);
   const activeSub = useGardenMapStore((s) => s.activeSub);
   const selectedPlaceId = useGardenMapStore((s) => s.selectedPlaceId);
   const selectPlace = useGardenMapStore((s) => s.selectPlace);
@@ -50,19 +50,33 @@ export default function Page() {
 
   const places: Place[] = useMemo(() => {
     const list = rawPlaces ?? [];
-    if (!activeGroup) return list;
-    return list.filter((p) => p.categoryDepth1 === activeGroup && (!activeSub || p.categoryDepth2 === activeSub));
-  }, [rawPlaces, activeGroup, activeSub]);
+    if (activeGroups.size === 0) return list;
+    // 그룹이 2개 이상이면 서브카테고리는 어느 그룹 기준인지 모호해지므로 무시하고 그룹만 본다
+    // (activeSub는 store.ts의 toggleGroup에서 그룹 조합이 바뀔 때마다 null로 리셋됨).
+    return list.filter((p) => {
+      if (!activeGroups.has(p.categoryDepth1)) return false;
+      if (activeGroups.size === 1 && activeSub) return p.categoryDepth2 === activeSub;
+      return true;
+    });
+  }, [rawPlaces, activeGroups, activeSub]);
 
   const selectedPlace = places.find((p) => p.placeId === selectedPlaceId) ?? null;
   const hasSearched = isNearbyMode || submittedTerm.length > 0;
 
-  function runSearch() {
+  const addRecentSearch = useGardenMapStore((s) => s.addRecentSearch);
+
+  // [자동완성 클릭 경쟁 방지] 자동완성 항목을 고르면 setSearchTerm(term) 직후 곧바로
+  // onSubmit()을 호출하는데, 이 함수가 클로저로 캡처한 searchTerm은 아직 리렌더 전이라
+  // "이전" 값이다(Zustand set()은 store를 즉시 바꾸지만 이 컴포넌트의 리렌더는 다음
+  // 사이클에 일어남). overrideTerm을 받아 그 값을 우선하면 이 경쟁을 피할 수 있다.
+  function runSearch(overrideTerm?: string) {
+    const term = (overrideTerm ?? searchTerm).trim();
     setNearbyCoords(null);
     setLocateCoords(null);
-    setSubmittedTerm(searchTerm.trim());
+    setSubmittedTerm(term);
     setFocusTrigger((t) => t + 1);
     setSheetSnap("half");
+    if (term) addRecentSearch(term);
   }
 
   function handleNearby() {
@@ -120,7 +134,12 @@ export default function Page() {
     onPrefetchPlace(p);
   }
 
-  const activeGroupLabel = activeGroup ? GROUP_LABEL[activeGroup] : null;
+  const activeGroupLabel =
+    activeGroups.size === 0
+      ? null
+      : activeGroups.size === 1
+        ? GROUP_LABEL[[...activeGroups][0]]
+        : `${activeGroups.size}개 유형`;
   const statusLabel = isNearbyMode
     ? "내 위치 · 반경 5km"
     : region + (submittedTerm ? ` · "${submittedTerm}"` : " · 검색어를 입력해주세요");

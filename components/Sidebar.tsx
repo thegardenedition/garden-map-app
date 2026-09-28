@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { REGION_LIST, type Region, type Place } from "@/lib/types";
 import { useGardenMapStore } from "@/lib/store";
+import { getCategorySuggestions } from "@/lib/searchSuggestions";
 import FilterChips from "./FilterChips";
 import PlaceList from "./PlaceList";
 import DetailContent from "./DetailContent";
+import SearchSuggestDropdown from "./SearchSuggestDropdown";
 
 // [데스크탑 레이아웃] 모바일의 플로팅 상단바+드래그 바텀시트 대신, 검색/필터/리스트가 항상
 // 한눈에 보이는 고정 사이드바를 쓴다. 화면 공간이 넉넉한 데스크탑에서 굳이 시트를 접었다 펴게
@@ -23,7 +26,7 @@ export default function Sidebar({
   onClosePlace,
   statusLabel,
 }: {
-  onSubmit: () => void;
+  onSubmit: (overrideTerm?: string) => void;
   onNearby: () => void;
   locating: boolean;
   places: Place[];
@@ -40,6 +43,14 @@ export default function Sidebar({
   const setRegion = useGardenMapStore((s) => s.setRegion);
   const searchTerm = useGardenMapStore((s) => s.searchTerm);
   const setSearchTerm = useGardenMapStore((s) => s.setSearchTerm);
+  const recent = useGardenMapStore((s) => s.recentSearches);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+
+  function pick(term: string) {
+    setSearchTerm(term);
+    setSuggestOpen(false);
+    onSubmit(term);
+  }
 
   return (
     <div className="relative z-[20] flex h-full w-[400px] flex-shrink-0 flex-col bg-[var(--color-deep-blue)] text-white">
@@ -54,7 +65,7 @@ export default function Sidebar({
       </div>
 
       <div className="flex-shrink-0 px-6">
-        <div className="flex items-center gap-1.5 rounded-2xl bg-white/10 p-2">
+        <div className="relative flex items-center gap-1.5 rounded-2xl bg-white/10 p-2">
           <select
             value={storeRegion}
             onChange={(e) => setRegion(e.target.value as Region)}
@@ -70,19 +81,32 @@ export default function Sidebar({
           <input
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onFocus={() => setSuggestOpen(true)}
+            onBlur={() => setSuggestOpen(false)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") onSubmit();
+              if (e.key === "Enter") {
+                setSuggestOpen(false);
+                onSubmit();
+              }
             }}
             placeholder="예: 조경, 잔디, 수목원..."
             className="tp-body min-h-[40px] min-w-0 flex-1 bg-transparent text-white outline-none placeholder:text-white/40"
           />
           <button
-            onClick={onSubmit}
+            onClick={() => onSubmit()}
             aria-label="검색"
             className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--color-neon-yellow)] text-lg text-[var(--color-deep-blue)]"
           >
             ⌕
           </button>
+          {suggestOpen && (
+            <SearchSuggestDropdown
+              categories={getCategorySuggestions(searchTerm)}
+              recent={searchTerm.trim() ? [] : recent}
+              onPick={pick}
+              variant="dark"
+            />
+          )}
         </div>
         <button
           onClick={onNearby}

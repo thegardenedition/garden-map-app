@@ -1,16 +1,27 @@
 "use client";
 
+import { useState } from "react";
 import { REGION_LIST } from "@/lib/types";
 import { useGardenMapStore } from "@/lib/store";
+import { getCategorySuggestions } from "@/lib/searchSuggestions";
+import SearchSuggestDropdown from "./SearchSuggestDropdown";
 
-export default function TopBar({ onSubmit }: { onSubmit: () => void }) {
+export default function TopBar({ onSubmit }: { onSubmit: (overrideTerm?: string) => void }) {
   const region = useGardenMapStore((s) => s.region);
   const setRegion = useGardenMapStore((s) => s.setRegion);
   const searchTerm = useGardenMapStore((s) => s.searchTerm);
   const setSearchTerm = useGardenMapStore((s) => s.setSearchTerm);
+  const recent = useGardenMapStore((s) => s.recentSearches);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+
+  function pick(term: string) {
+    setSearchTerm(term);
+    setSuggestOpen(false);
+    onSubmit(term);
+  }
 
   return (
-    <div className="flex items-center gap-1.5 rounded-2xl bg-white p-2 shadow-[0_4px_18px_rgba(0,0,0,0.25)]">
+    <div className="relative flex items-center gap-1.5 rounded-2xl bg-white p-2 shadow-[0_4px_18px_rgba(0,0,0,0.25)]">
       <select
         value={region}
         onChange={(e) => setRegion(e.target.value as typeof region)}
@@ -26,19 +37,32 @@ export default function TopBar({ onSubmit }: { onSubmit: () => void }) {
       <input
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
+        onFocus={() => setSuggestOpen(true)}
+        onBlur={() => setSuggestOpen(false)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onSubmit();
+          if (e.key === "Enter") {
+            setSuggestOpen(false);
+            onSubmit();
+          }
         }}
         placeholder="예: 조경, 잔디, 수목원..."
         className="tp-body min-h-[44px] min-w-0 flex-1 bg-transparent text-[var(--color-deep-blue)] outline-none placeholder:text-[#B4B8D6]"
       />
       <button
-        onClick={onSubmit}
+        onClick={() => onSubmit()}
         aria-label="검색"
         className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)]"
       >
         ⌕
       </button>
+      {suggestOpen && (
+        <SearchSuggestDropdown
+          categories={getCategorySuggestions(searchTerm)}
+          recent={searchTerm.trim() ? [] : recent}
+          onPick={pick}
+          variant="light"
+        />
+      )}
     </div>
   );
 }

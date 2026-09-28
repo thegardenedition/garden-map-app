@@ -35,29 +35,35 @@ function Chip({
   );
 }
 
-// [z-index 및 2-Depth 필터] 사양의 z-20 레이어에 해당 — 상단 검색바 바로 아래, 지도 위에 떠서
-// 가로 스와이프(no-scrollbar)로 그룹→서브카테고리 2단계를 오간다.
+// [z-index 및 다중 레이어 필터] 사양의 z-20 레이어에 해당 — 상단 검색바 바로 아래, 지도 위에 떠서
+// 가로 스와이프(no-scrollbar)로 그룹→서브카테고리를 오간다. 호갱노노의 "여러 데이터 레이어를
+// 동시에 켜는" 그리드를 벤치마킹해 그룹은 다중 선택 가능하다 — 예: 조경회사+공원을 동시에 켜서
+// 지도에 같이 표시할 수 있다. 서브카테고리는 그룹이 정확히 1개일 때만 의미가 있으므로(그 하나의
+// 그룹 안에서 더 좁히는 용도) 여전히 단일 선택이고, 그룹이 2개 이상이면 서브 칩 자체를 감춘다.
 export default function FilterChips() {
-  const activeGroup = useGardenMapStore((s) => s.activeGroup);
+  const activeGroups = useGardenMapStore((s) => s.activeGroups);
   const activeSub = useGardenMapStore((s) => s.activeSub);
-  const setActiveGroup = useGardenMapStore((s) => s.setActiveGroup);
+  const toggleGroup = useGardenMapStore((s) => s.toggleGroup);
+  const clearGroups = useGardenMapStore((s) => s.clearGroups);
   const setActiveSub = useGardenMapStore((s) => s.setActiveSub);
+
+  const singleActiveGroup = activeGroups.size === 1 ? [...activeGroups][0] : null;
 
   return (
     <div className="flex flex-col gap-2">
       <div className="no-scrollbar flex gap-2 overflow-x-auto">
-        <Chip active={!activeGroup} onClick={() => setActiveGroup(null)}>
+        <Chip active={activeGroups.size === 0} onClick={clearGroups}>
           전체
         </Chip>
         {GROUP_ORDER.map((g) => (
-          <Chip key={g} active={activeGroup === g} onClick={() => setActiveGroup(activeGroup === g ? null : g)}>
+          <Chip key={g} active={activeGroups.has(g)} onClick={() => toggleGroup(g)}>
             {GROUP_ICON[g]} {GROUP_LABEL[g]}
           </Chip>
         ))}
       </div>
-      {activeGroup && (
+      {singleActiveGroup && (
         <div className="no-scrollbar flex gap-2 overflow-x-auto">
-          {SUB_DEFS[activeGroup].map((sub) => (
+          {SUB_DEFS[singleActiveGroup].map((sub) => (
             <Chip key={sub.id} sub active={activeSub === sub.id} onClick={() => setActiveSub(sub.id)}>
               {sub.icon} {sub.label}
             </Chip>
