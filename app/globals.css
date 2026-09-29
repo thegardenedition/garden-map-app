@@ -54,6 +54,10 @@
   --z-mobile-float-actions: 25;  /* 모바일 "이 근처에서 찾기"/"지도 탐색으로" 버튼 (app/page.tsx) */
   --z-desktop-float-actions: 30; /* 데스크톱 "이 근처에서 찾기"/"현재 위치" 버튼 (app/page.tsx) */
   --z-bottom-sheet: 40;          /* 목록 바텀시트 (BottomSheet.tsx) */
+  /* 모바일 검색 자동완성 드롭다운이 열려 있는 동안만 상단 스택(topstack)이 이 값을 쓴다
+     (app/page.tsx) — 평소엔 --z-mobile-topstack(20)이라 바텀시트(40)의 stacking context
+     안에 갇혀서, 자식인 드롭다운 쪽 z-index를 아무리 올려도 시트에 가려진다. */
+  --z-search-suggest: 42;
   --z-desktop-hint: 45;          /* "Ctrl+스크롤로 확대" 안내 (MapCanvas.tsx) */
   --z-modal-backdrop: 70;        /* 상세 시트 딤 배경, pointer-events:none (PlaceDetailSheet.tsx) */
   --z-modal-sheet: 80;           /* 상세 시트 본체 (PlaceDetailSheet.tsx) */

@@ -42,10 +42,39 @@ interface GardenMapState {
   nearbyMode: boolean;
   setNearbyMode: (v: boolean) => void;
 
+  // [검색 자동완성 — 최근 검색어] TopBar(모바일)와 Sidebar(데스크탑)가 각자 독립된 훅
+  // 인스턴스로 관리하면 한쪽에서 검색해도 다른 쪽 드롭다운에 안 뜬다 — 스토어에 두어
+  // 두 컴포넌트가 항상 같은 목록을 본다. localStorage에도 함께 써서 새로고침 후에도 남는다.
+  recentSearches: string[];
+  addRecentSearch: (term: string) => void;
+
   reset: () => void;
 }
 
 const INITIAL_BOUNDS: MapBounds = { center: [127.8, 36.5], level: 13 };
+
+const RECENT_SEARCHES_KEY = "garden-map-recent-searches";
+const RECENT_SEARCHES_MAX = 8;
+
+function readRecentSearches(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(RECENT_SEARCHES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeRecentSearches(list: string[]) {
+  try {
+    window.localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(list));
+  } catch {
+    // 저장 실패(프라이빗 모드 등)는 조용히 무시 — 최근 검색어는 편의 기능일 뿐이다.
+  }
+}
 
 export const useGardenMapStore = create<GardenMapState>((set) => ({
   region: "전국",
@@ -80,7 +109,19 @@ export const useGardenMapStore = create<GardenMapState>((set) => ({
   nearbyMode: false,
   setNearbyMode: (nearbyMode) => set({ nearbyMode }),
 
+  recentSearches: readRecentSearches(),
+  addRecentSearch: (term) =>
+    set((s) => {
+      const trimmed = term.trim();
+      if (!trimmed) return {};
+      const next = [trimmed, ...s.recentSearches.filter((t) => t !== trimmed)].slice(0, RECENT_SEARCHES_MAX);
+      writeRecentSearches(next);
+      return { recentSearches: next };
+    }),
+
   reset: () =>
+    // recentSearches는 의도적으로 리셋 대상에서 뺀다 — "새 검색 시작"이 최근 검색 이력까지
+    // 지울 이유는 없다.
     set({
       region: "전국",
       searchTerm: "",

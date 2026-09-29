@@ -110,6 +110,13 @@ export default function Page() {
   }, []);
 
   const [locating, setLocating] = useState(false);
+  // [검색 자동완성 드롭다운이 열려 있는 동안 상단 스택을 바텀시트 위로]
+  // 상단 스택(topStackRef가 감싸는 검색바+필터) 전체가 z-mobile-topstack(20)인 하나의
+  // positioned 컨테이너다. 바텀시트는 z-bottom-sheet(40) — 자식인 드롭다운의 z-index를
+  // 아무리 올려도 부모 stacking context가 20에 갇혀 있어 시트보다 항상 아래에 그려진다.
+  // 드롭다운이 열려 있을 때만 컨테이너 z-index를 --z-search-suggest(42)로 올리고,
+  // 닫히면 원래 값으로 되돌려 다른 레이어링(예: 필터 팝오버)에 영향이 없게 한다.
+  const [searchSuggestOpen, setSearchSuggestOpen] = useState(false);
   // [지도만 보기] 검색·필터가 끝난 뒤에도 상단 스택이 계속 지도 위 공간을 차지해 답답하다는
   // 피드백을 받았다. 상단 스택 전체(배지·검색바·칩)를 잠깐 걷어내는 토글이다. 상태는 그대로
   // 두고 화면에서만 숨기므로, 다시 누르면 검색어·필터가 그대로 남아 있다.
@@ -252,13 +259,21 @@ export default function Page() {
     setFocusTrigger((t) => t + 1);
   }, [resetStore]);
 
-  function runSearch() {
+  const addRecentSearch = useGardenMapStore((s) => s.addRecentSearch);
+
+  // [자동완성 클릭 경쟁 방지] 자동완성 항목을 고르면 setSearchTerm(term) 직후 곧바로
+  // onSubmit()을 호출하는데, 이 함수가 클로저로 캡처한 searchTerm은 아직 리렌더 전이라
+  // "이전" 값이다(zustand set()은 store를 즉시 바꾸지만 이 컴포넌트의 리렌더는 다음
+  // 사이클에 일어남). overrideTerm을 받아 그 값을 우선하면 이 경쟁을 피할 수 있다.
+  function runSearch(overrideTerm?: string) {
+    const term = (overrideTerm ?? searchTerm).trim();
     setNearbyCoords(null);
     setLocateCoords(null);
     setMovedCoords(null);
-    setSubmittedTerm(searchTerm.trim());
+    setSubmittedTerm(term);
     setFocusTrigger((t) => t + 1);
     setSheetSnap("half");
+    if (term) addRecentSearch(term);
   }
 
   function handleNearby() {
@@ -460,7 +475,12 @@ export default function Page() {
           사이 8px 틈도 전부 그렇다. 그래서 화면 위 138px 띠에서는 지도를 끌 수도, 그 자리
           마커를 누를 수도 없었다 — 지도는 보이는데 반응하지 않으니 고장으로 느껴진다.
           껍데기는 터치를 흘려보내고, 실제 조작이 필요한 자식만 받는다. */}
-      <div ref={topStackRef} className="pointer-events-none absolute inset-x-3 top-3 z-[var(--z-mobile-topstack)]">
+      <div
+        ref={topStackRef}
+        className={`pointer-events-none absolute inset-x-3 top-3 ${
+          searchSuggestOpen ? "z-[var(--z-search-suggest)]" : "z-[var(--z-mobile-topstack)]"
+        }`}
+      >
         <AnimatePresence>
           {!mapUiHidden && (
           <motion.div
@@ -489,7 +509,7 @@ export default function Page() {
               </a>
             )}
             <div className="pointer-events-auto">
-              <TopBar onSubmit={runSearch} />
+              <TopBar onSubmit={runSearch} onSuggestOpenChange={setSearchSuggestOpen} />
             </div>
             {/* [검색 중엔 칩을 접어 둔다] 탐색 모드에서만 칩을 곧바로 펼쳐 보여주고, 검색·내
                 주변 모드에서는 작은 토글로 접어서 지도 볼 공간을 늘린다. 눌러서 펼치면 필터
