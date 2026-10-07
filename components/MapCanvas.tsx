@@ -376,6 +376,7 @@ export default function MapCanvas({
   focusCoords,
   focusAccuracy,
   focusRadius,
+  urlFocus,
   isDesktop = false,
   projectPins = [],
   onUserPan,
@@ -389,6 +390,7 @@ export default function MapCanvas({
   focusCoords?: { lat: number; lng: number } | null; // 있으면 첫 결과 대신 이 좌표로 이동
   focusAccuracy?: number | null; // 브라우저가 알려준 위치 오차(m). 오차 원 크기에 쓴다.
   focusRadius?: number | null; // 반경 검색 중이면 그 반경(m). 지도를 이 범위에 맞춘다.
+  urlFocus?: { lat: number; lng: number } | null; // 주소의 ?lat&lng. 지도가 만들어진 뒤 한 번만 그 좌표로 연다(내 위치 점은 찍지 않는다).
   isDesktop?: boolean; // 데스크탑에서는 Ctrl+스크롤로만 확대/축소되도록 제스처를 가로챈다
   projectPins?: ProjectPin[]; // 채널그린 프로젝트 게시글 — 검색과 무관하게 항상 표시
   onUserPan?: (center: { lat: number; lng: number }) => void; // 사용자가 지도를 손으로 드래그해서 옮겼을 때만 호출("현 위치에서 재검색" 버튼 트리거용). panTo() 같은 프로그램적 이동에는 호출되지 않는다.
@@ -485,6 +487,9 @@ export default function MapCanvas({
   // 못한다(그 effect는 places/isDesktop 변경에만 반응했다) — 레벨 8 경계를 넘나드는 순간을
   // 놓치지 않으려면 state로도 들고 있어야 한다.
   const [zoomLevel, setZoomLevel] = useState<number | null>(null);
+  // 카카오 지도 인스턴스가 만들어졌다는 신호. 주소 링크(urlFocus)는 지도보다 먼저 도착할 수 있다.
+  const [mapReady, setMapReady] = useState(false);
+  const appliedUrlFocusRef = useRef<string | null>(null);
 
   useEffect(() => {
     isDesktopRef.current = isDesktop;
@@ -627,6 +632,7 @@ export default function MapCanvas({
         map.setZoomable(!isDesktopRef.current || hasTouchRef.current);
         mapRef.current = map;
         setZoomLevel(map.getLevel());
+        setMapReady(true);
 
         // ["현 위치에서 재검색"] dragend는 사용자가 손으로 지도를 끌었을 때만 발생하고,
         // panTo() 같은 프로그램적 이동(검색 결과로 자동 이동 등)에는 발생하지 않는다. 그래서
@@ -1193,6 +1199,21 @@ export default function MapCanvas({
     map.panTo(new kakao.maps.LatLng(first.coordinates[1], first.coordinates[0]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusTrigger]);
+
+  // [주소 링크로 열기] 프로젝트 상세의 「지도에서 보기」가 ?lat&lng 로 이 앱을 연다. 위 이펙트는
+  // 지도가 만들어지기 전에 도착한 신호를 버리고, 만들어진 직후 init 이 수도권으로 초기 뷰를
+  // 맞춰 버려 링크가 먹지 않았다. 지도 준비(mapReady)와 좌표(urlFocus)가 모두 갖춰지면
+  // 한 번만 그 좌표로 연다. "내 위치" 점·검색 원은 그리지 않는다(내 위치가 아니라 프로젝트 위치다).
+  useEffect(() => {
+    const kakao = window.kakao;
+    const map = mapRef.current;
+    if (!mapReady || !map || !kakao?.maps || !urlFocus) return;
+    const key = `${urlFocus.lat},${urlFocus.lng}`;
+    if (appliedUrlFocusRef.current === key) return;
+    appliedUrlFocusRef.current = key;
+    map.setLevel(5);
+    map.setCenter(new kakao.maps.LatLng(urlFocus.lat, urlFocus.lng));
+  }, [mapReady, urlFocus]);
 
   // 선택된 장소로 고립 마커 표시 + 확대
   useEffect(() => {
