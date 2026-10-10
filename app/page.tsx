@@ -105,7 +105,6 @@ export default function Page() {
     const lng = parseFloat(params.get("lng") ?? "");
     if (Number.isFinite(lat) && Number.isFinite(lng)) {
       setUrlFocusCoords({ lat, lng });
-      setFocusTrigger((t) => t + 1);
     }
   }, []);
 
@@ -398,7 +397,8 @@ export default function Page() {
       onSelectPlace={selectPlace}
       onPrefetchPlace={onPrefetchPlace}
       focusTrigger={focusTrigger}
-      focusCoords={nearbyCoords ?? locateCoords ?? urlFocusCoords}
+      focusCoords={nearbyCoords ?? locateCoords}
+      urlFocus={urlFocusCoords}
       focusAccuracy={locateAccuracy}
       focusRadius={isNearbyMode ? (nearbyQuery.data?.radiusM ?? null) : null}
       isDesktop={isDesktop}
