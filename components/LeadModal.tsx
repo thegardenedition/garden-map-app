@@ -16,6 +16,7 @@ import type { Place } from "@/lib/types";
 const LEADS_ENDPOINT = "https://mg-biz.chgreena.workers.dev/leads";
 const TURNSTILE_SITE_KEY = "0x4AAAAAAEzXrschn6x6Odo7";
 const PRIVACY_POLICY_URL = "https://magazinegreen.co.kr/privacy-policy";
+const PARTNER_LIST_URL = "https://www.magazinegreen.co.kr/partners";
 
 type BudgetBand = "under_500" | "500_1500" | "1500_4000" | "over_4000";
 type Timing = "asap" | "1_3m" | "3_6m" | "later";
@@ -319,7 +320,7 @@ export default function LeadModal({ place, onClose }: { place: Place; onClose: (
               <input type="checkbox" name="consent_3rd" required className="mt-0.5 flex-shrink-0" />
               <span>
                 [필수] 제3자 제공 동의 — 제공받는 자:{" "}
-                <a href={PRIVACY_POLICY_URL} target="_blank" rel="noopener noreferrer" className="underline">
+                <a href={PARTNER_LIST_URL} target="_blank" rel="noopener noreferrer" className="underline">
                   매거진 그린 파트너 업체 목록
                 </a>
                 에 공개된 업체 중 신청 지역·정원 유형에 맞는 최대 3곳(원하시는 수:{" "}
