@@ -363,8 +363,13 @@ export default function LeadModal({ place, onClose }: { place: Place; onClose: (
             >
               {status === "submitting" ? "접수 중..." : "상담 신청하기"}
             </button>
-            <p className="text-center text-[11px] text-[#9AA0C4]">
-              매거진 그린(채널그린)은 통신판매중개자로서 상담·시공 계약의 당사자가 아닙니다.
+            {/* 통신판매중개자 고지 — 정본: 매거진그린/사이트/리드폼-동의문안-2026-09-23.md 5-2절. 글자까지 같아야 한다(mg-biz 폼·푸터와 동일). */}
+            <p className="text-[11px] leading-[1.6] text-[#9AA0C4]">
+              매거진 그린(채널그린)은 정원·조경 상담 매칭에서 통신판매중개자로서 통신판매의 당사자가 아니며, 상담·견적·계약·시공·대금에 관한 의무와 책임은 이용자와 해당 조경 업체(가든디자이너)에게 있습니다. 파트너 업체의 사업자 정보는{" "}
+              <a href={PARTNER_LIST_URL} target="_blank" rel="noopener noreferrer" className="underline">
+                파트너 목록 페이지
+              </a>
+              에서 확인할 수 있습니다.
             </p>
           </form>
         )}
