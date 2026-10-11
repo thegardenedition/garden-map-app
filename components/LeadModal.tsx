@@ -151,6 +151,13 @@ export default function LeadModal({ place, onClose }: { place: Place; onClose: (
       consent_news: data.get("consent_news") === "on",
       landing_path: window.location.pathname + window.location.search,
     };
+    // 주소에 출처 표시(utm)가 있으면 그대로 싣는다. 서버는 이 세 칸을 이미 받아 저장한다 —
+    // 아카이브의 「지도에서 보기」로 들어온 방문자가 낸 견적을 알아보기 위한 값이다.
+    const urlParams = new URLSearchParams(window.location.search);
+    for (const key of ["utm_source", "utm_medium", "utm_campaign"]) {
+      const value = urlParams.get(key);
+      if (value) payload[key] = value.slice(0, 80);
+    }
     const email = String(data.get("email") || "").trim();
     if (email) payload.email = email;
     const region = String(data.get("region") || "").trim();
