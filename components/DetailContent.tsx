@@ -123,6 +123,8 @@ export default function DetailContent({ place, region }: { place: Place; region:
               ? "error"
               : "loading"
           : null;
+  const showCopy = place.locationState === "pending" && noticeKind !== "loading";
+  const [copied, setCopied] = useState(false);
   const addressSearchLink = `https://map.kakao.com/link/search/${encodeURIComponent(place.address || place.placeName)}`;
 
   return (
@@ -141,6 +143,17 @@ export default function DetailContent({ place, region }: { place: Place; region:
       {noticeKind && (
         <p role="status" className="tp-caption mb-2.5 text-[#7A7FA6]">
           {locationNotice(noticeKind)}
+          {showCopy && (
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard?.writeText(place.address).then(() => setCopied(true), () => setCopied(false));
+              }}
+              className="ml-2 inline-flex min-h-[44px] items-center text-[var(--color-deep-blue)] underline underline-offset-2"
+            >
+              {copied ? "복사했어요" : "주소 복사"}
+            </button>
+          )}
         </p>
       )}
 

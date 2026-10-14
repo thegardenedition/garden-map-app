@@ -81,10 +81,10 @@ export function locationNotice(kind: LocationNoticeKind): string {
     case "live":
       return "주소로 찾은 위치예요. 건물 위치와 조금 다를 수 있어요";
     case "approx":
-      return "주소 인근 건물 기준 위치예요";
+      return "주소 근처 건물을 기준으로 표시했어요";
     case "zero":
-      return "주소로 지도 위치를 찾지 못했어요";
+      return "아직 지도에 표시하지 못했어요. 주소는 아래에서 복사할 수 있어요";
     case "error":
-      return "지도 위치를 불러오지 못했어요";
+      return "지도 위치를 불러오지 못했어요. 주소는 아래에서 복사할 수 있어요";
   }
 }

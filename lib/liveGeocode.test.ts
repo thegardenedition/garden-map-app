@@ -53,5 +53,6 @@ test("좌표가 숫자가 아니면 성공으로 치지 않는다", async () => 
 
 test("안내 문구는 정식 위치처럼 말하지 않는다", () => {
   assert.match(locationNotice("live"), /조금 다를 수 있어요/);
-  assert.match(locationNotice("approx"), /인근 건물 기준/);
+  assert.match(locationNotice("approx"), /근처 건물을 기준/);
+  assert.match(locationNotice("zero"), /주소는 아래에서 복사/);
 });
