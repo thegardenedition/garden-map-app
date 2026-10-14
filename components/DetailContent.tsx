@@ -108,7 +108,9 @@ export default function DetailContent({ place, region }: { place: Place; region:
 
   // [위치 정확도 안내] 정식 핀이 아닌 위치(근사·실시간·확인 중)는 정식처럼 말하지 않고 한 줄로 밝힌다.
   // pending 은 좌표가 [0,0] 자리표시라, 실시간 변환이 끝나기 전에는 좌표 기반 링크를 만들지 않는다.
-  const noPosition = place.locationState === "pending";
+  // 실시간로 찾은 임시 위치(live)도 링크·공유 주소에는 싣지 않는다 — 좌표를 어디로도 내보내지 않고(링크·공유·리드 폼·로그),
+  // 길찾기·공유는 주소 검색 링크로만 연결한다. 임시 핀은 이 화면의 지도 위에서만 쓴다.
+  const noPosition = place.locationState === "pending" || place.locationState === "live";
   const noticeKind: LocationNoticeKind | null =
     place.locationState === "live"
       ? "live"
