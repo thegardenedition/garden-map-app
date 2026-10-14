@@ -1348,7 +1348,7 @@ export default function MapCanvas({
   return (
     <>
       <Script
-        src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=b6ccb52c66e30ecdb1b781cf75283988&autoload=false&libraries=clusterer"
+        src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=b6ccb52c66e30ecdb1b781cf75283988&autoload=false&libraries=clusterer,services"
         strategy="afterInteractive"
         onReady={() => {
           scriptLoadedRef.current = true;

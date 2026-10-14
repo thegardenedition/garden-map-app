@@ -168,6 +168,9 @@ interface BizV2Row {
   sub: SubId;
   region: string;
   distance_m?: number;
+  // 공공 대장 전환 뒤 워커가 내려줄 값(지금 워커는 보내지 않아 비어 있다). 좌표가 없으면 lat/lng 는 null.
+  coord_state?: "ok" | "pending" | "review" | null;
+  coord_approx?: number | null;
 }
 
 interface BizV2Query {
@@ -218,21 +221,26 @@ async function fetchBizV2Page(query: BizV2Query): Promise<BizV2Page> {
   const data = await res.json();
   const rows: BizV2Row[] = data?.results ?? [];
   const places: Place[] = rows
-    .filter((r) => parseFloat(String(r.lat)) && parseFloat(String(r.lng)))
-    .map((r) => ({
+    // 좌표가 있는 행은 지금처럼, 좌표가 없어도 워커가 「위치 확인 중」(pending·review)이라고 밝힌 행은 목록용으로 남긴다.
+    .filter((r) => (parseFloat(String(r.lat)) && parseFloat(String(r.lng))) || r.coord_state === "pending" || r.coord_state === "review")
+    .map((r) => {
+      const hasXY = Boolean(parseFloat(String(r.lat)) && parseFloat(String(r.lng)));
+      return {
       placeId: `v2-${r.id}`,
       categoryDepth1: r.grp,
       categoryDepth2: r.sub,
       placeName: r.name || "",
       address: r.addr || "",
       contact: r.tel || null,
-      coordinates: [parseFloat(String(r.lng)), parseFloat(String(r.lat))],
+      coordinates: (hasXY ? [parseFloat(String(r.lng)), parseFloat(String(r.lat))] : [0, 0]) as [number, number],
+      locationState: hasXY ? (r.coord_approx ? ("approx" as const) : ("exact" as const)) : ("pending" as const),
       homepage: r.homepage || null,
       homepageDirect: null,
       source: "kakao" as const,
       distanceM: typeof r.distance_m === "number" ? r.distance_m : null,
       businessCategory: r.category_path || null,
-    }));
+      };
+    });
   // 서버가 total 을 주지 않으면(구버전 응답) 잘렸는지 알 수 없으므로 받은 만큼을 전체로 본다.
   const total = typeof data?.total === "number" ? data.total : rows.length;
   return { places, total, fetched: rows.length };

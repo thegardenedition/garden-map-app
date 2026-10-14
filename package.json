@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test lib/truncation.test.ts"
+    "test": "node --test lib/truncation.test.ts lib/liveGeocode.test.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

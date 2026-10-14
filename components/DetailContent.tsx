@@ -8,6 +8,7 @@ import { SUB_DEFS } from "@/lib/types";
 import { CategoryIcon, GROUP_COLOR, InfoIcon } from "@/lib/icons";
 import { fetchNaverHomepage, fetchTourIntro, kakaoDirLink } from "@/lib/api";
 import { kakaoPlaceLink } from "@/lib/shareLink";
+import { locationNotice, type LocationNoticeKind } from "@/lib/liveGeocode";
 import ShareButton from "./ShareButton";
 import LeadModal from "./LeadModal";
 
@@ -105,6 +106,23 @@ export default function DetailContent({ place, region }: { place: Place; region:
 
   const subDef = SUB_DEFS[place.categoryDepth1]?.find((s) => s.id === place.categoryDepth2);
 
+  // [위치 정확도 안내] 정식 핀이 아닌 위치(근사·실시간·확인 중)는 정식처럼 말하지 않고 한 줄로 밝힌다.
+  // pending 은 좌표가 [0,0] 자리표시라, 실시간 변환이 끝나기 전에는 좌표 기반 링크를 만들지 않는다.
+  const noPosition = place.locationState === "pending";
+  const noticeKind: LocationNoticeKind | null =
+    place.locationState === "live"
+      ? "live"
+      : place.locationState === "approx"
+        ? "approx"
+        : noPosition
+          ? place.liveStatus === "zero"
+            ? "zero"
+            : place.liveStatus === "error" || place.liveStatus === "unavailable"
+              ? "error"
+              : "loading"
+          : null;
+  const addressSearchLink = `https://map.kakao.com/link/search/${encodeURIComponent(place.address || place.placeName)}`;
+
   return (
     <div>
       <span className="tp-caption mb-2 inline-flex items-center gap-1.5 rounded-lg bg-[rgba(6,16,125,0.08)] px-3 py-1 text-[var(--color-deep-blue)]">
@@ -118,6 +136,11 @@ export default function DetailContent({ place, region }: { place: Place; region:
       </span>
       <h3 className="tp-title mb-1 break-words text-[#0A0A23]">{place.placeName}</h3>
       <p className="tp-body mb-2.5 break-words text-[#5A5A78]">{place.address}</p>
+      {noticeKind && (
+        <p role="status" className="tp-caption mb-2.5 text-[#7A7FA6]">
+          {locationNotice(noticeKind)}
+        </p>
+      )}
 
       {place.source === "registry" ? (
         /* [대장 출처] 한국수목원정원관리원이 직접 관리하는 값이라 외부에 다시 물어볼 필요가 없다.
@@ -223,11 +246,11 @@ export default function DetailContent({ place, region }: { place: Place; region:
       <div className="mt-3.5 flex flex-wrap gap-2">
         <a
           className="tp-caption rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] bg-[var(--color-deep-blue)] px-4 py-2.5 text-white"
-          href={kakaoDirLink(place.placeName, place.coordinates[1], place.coordinates[0])}
+          href={noPosition ? addressSearchLink : kakaoDirLink(place.placeName, place.coordinates[1], place.coordinates[0])}
           target="_blank"
           rel="noopener noreferrer"
         >
-          길찾기
+          {noPosition ? "카카오맵에서 주소 찾기" : "길찾기"}
         </a>
         {(place.homepageDirect || naverHomepage.data) && (
           <a
@@ -257,7 +280,7 @@ export default function DetailContent({ place, region }: { place: Place; region:
         <ShareButton
           title={place.placeName}
           text={place.address}
-          url={kakaoPlaceLink(place.placeName, place.coordinates[1], place.coordinates[0])}
+          url={noPosition ? addressSearchLink : kakaoPlaceLink(place.placeName, place.coordinates[1], place.coordinates[0])}
         />
       </div>
 

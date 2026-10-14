@@ -121,6 +121,11 @@ export default function PlaceList({
                   {icon}
                   {subLabel?.label ?? ""}
                 </span>
+                {place.locationState === "pending" && (
+                  <span className="tp-caption rounded-lg bg-[rgba(122,127,166,0.14)] px-2 py-0.5 text-[9px] text-[#5A5A78]">
+                    지도 위치 확인 중
+                  </span>
+                )}
                 {place.distanceM != null && (
                   <span className="tp-caption rounded-lg bg-[rgba(11,138,90,0.1)] px-2 py-0.5 text-[9px] text-[#0B8A5A]">
                     {formatDistance(place.distanceM)}

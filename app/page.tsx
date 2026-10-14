@@ -21,6 +21,7 @@ import {
   type Viewport,
 } from "@/lib/queries";
 import { useIsDesktop } from "@/lib/useIsDesktop";
+import { useLiveLocation } from "@/lib/useLiveLocation";
 import { fetchNaverHomepage, fetchTourIntro, haversineMeters } from "@/lib/api";
 import { browseNotice, searchNotice } from "@/lib/truncation";
 import type { Place } from "@/lib/types";
@@ -233,7 +234,24 @@ export default function Page() {
     return list.filter((p) => p.categoryDepth1 === activeGroup && (!activeSub || p.categoryDepth2 === activeSub));
   }, [rawPlaces, activeGroup, activeSub]);
 
-  const selectedPlace = places.find((p) => p.placeId === selectedPlaceId) ?? null;
+  const baseSelectedPlace = places.find((p) => p.placeId === selectedPlaceId) ?? null;
+  // [위치 확인 중 업체 — 눌렀을 때만 실시간 변환] 좌표를 못 빌린(pending) 업체를 열면 브라우저가 주소를 변환해
+  // 임시 핀(live)을 만든다. 결과는 이 화면의 메모리에만 있고 저장하지 않는다.
+  const liveLocation = useLiveLocation(baseSelectedPlace);
+  const selectedPlace: Place | null = useMemo(() => {
+    if (!baseSelectedPlace || baseSelectedPlace.locationState !== "pending") return baseSelectedPlace;
+    if (liveLocation.status === "ok" && liveLocation.coordinates) {
+      return { ...baseSelectedPlace, coordinates: liveLocation.coordinates, locationState: "live" };
+    }
+    const status = liveLocation.status === "idle" || liveLocation.status === "ok" ? "loading" : liveLocation.status;
+    return { ...baseSelectedPlace, liveStatus: status };
+  }, [baseSelectedPlace, liveLocation.status, liveLocation.coordinates]);
+  // 지도 레이어에는 위치가 있는 업체만 올린다(pending 은 [0,0] 자리표시라 올리면 안 된다). 실시간으로 찾은 선택 업체는 임시 핀으로 얹는다.
+  const mapPlaces: Place[] = useMemo(() => {
+    const placed = places.filter((p) => p.locationState !== "pending");
+    return selectedPlace?.locationState === "live" ? [...placed, selectedPlace] : placed;
+  }, [places, selectedPlace]);
+
   // 이제 지도를 보고 있는 것만으로도 데이터가 흐르므로(탐색 모드) 항상 "조회한 상태"다.
   // "검색어를 입력해주세요" 빈 화면은 더 이상 기본값이 아니다.
   const hasSearched = isNearbyMode || isSearchMode || isBrowseMode;
@@ -420,7 +438,7 @@ export default function Page() {
 
   const mapCanvas = (
     <MapCanvas
-      places={places}
+      places={mapPlaces}
       selectedPlaceId={selectedPlaceId}
       onSelectPlace={selectPlace}
       onPrefetchPlace={onPrefetchPlace}

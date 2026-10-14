@@ -29,6 +29,14 @@ export interface Place {
   address: string;
   contact: string | null;
   coordinates: [number, number]; // [lng, lat] — 스펙 payload 순서를 그대로 따름
+  // [위치 정확도 — 공공 대장 전환 대비] 없으면 "exact"(정식 핀).
+  //  approx  = 주소 인근 건물 기준 근사 위치(핀 옆 표식, 상세에 「주소 인근 건물 기준」)
+  //  pending = 좌표를 못 빌려 핀이 없음. coordinates 는 [0,0] 자리표시일 뿐이므로 지도 레이어에 올리지 않는다.
+  //            눌러서 상세를 열 때만 브라우저가 주소를 실시간 변환해 임시 핀(live)을 보여 준다(저장 안 함).
+  //  live    = pending 업체를 실시간 변환한 임시 위치(화면 메모리에만 존재).
+  locationState?: "exact" | "approx" | "pending" | "live";
+  // pending 업체의 실시간 위치 변환 진행 상태(화면 전용, 저장 안 함). 값이 있으면 상세가 그에 맞는 안내를 보여 준다.
+  liveStatus?: "loading" | "zero" | "error" | "unavailable";
   homepage: string | null;
   homepageDirect: string | null; // 네이버 검색으로 이미 확보된 링크면 추가 조회 없이 바로 사용
   // registry = 한국수목원정원관리원 대장(수목원 70 + 정원 80). 외부 조회 없이 자체 필드로
