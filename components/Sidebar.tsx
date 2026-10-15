@@ -20,6 +20,9 @@ export default function Sidebar({
   hasSearched,
   isLoading,
   isFetching,
+  isError,
+  onRetry,
+  notice,
   activeGroupLabel,
   selectedPlace,
   region,
@@ -41,6 +44,10 @@ export default function Sidebar({
   // 하나로 합치면 재검색할 때 목록이 이전 결과 대신 빈 안내문으로 순간 바뀌어 버린다.
   isLoading: boolean;
   isFetching: boolean;
+  // 조회가 끝내 실패했는지와 다시 시도하는 동작, 결과 위 안내 문구(「일부만 보여요」 등)
+  isError?: boolean;
+  onRetry?: () => void;
+  notice?: string | null;
   activeGroupLabel: string | null;
   selectedPlace: Place | null;
   region: Region;
@@ -161,7 +168,7 @@ export default function Sidebar({
         )}
       </div>
       <div className="px-6 pb-2 pt-1 text-[11px] text-white/50">
-        {isFetching ? "검색 중..." : hasSearched ? `${places.length}곳 표시 중${activeGroupLabel ? ` (${activeGroupLabel})` : ""}` : ""}
+        {isFetching ? "검색 중..." : isError ? "불러오지 못했어요" : hasSearched ? `${places.length}곳 표시 중${activeGroupLabel ? ` (${activeGroupLabel})` : ""}` : ""}
       </div>
 
       <div className="mt-1.5 flex flex-1 flex-col overflow-hidden rounded-t-[20px] bg-white text-[#0A0A23]">
@@ -176,7 +183,15 @@ export default function Sidebar({
             <DetailContent place={selectedPlace} region={region} />
           </div>
         ) : (
-          <PlaceList places={places} hasSearched={hasSearched && !isLoading} onSelect={onSelectPlace} />
+          <PlaceList
+            places={places}
+            hasSearched={hasSearched}
+            isLoading={isLoading}
+            isError={isError}
+            onRetry={onRetry}
+            notice={notice}
+            onSelect={onSelectPlace}
+          />
         )}
       </div>
     </div>
