@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import type { GroupId, Place, Region, SubId } from "./types";
 import type { Bbox } from "./api";
+import { SHOW_PROJECTS } from "./exposure";
 import {
   isRetriableError,
   browseByBbox,
@@ -172,6 +173,8 @@ export function useProjectPins() {
   return useQuery({
     queryKey: ["project-pins"],
     queryFn: fetchProjectPins,
+    // 아카이브 비공개 단계에서는 아예 요청하지 않는다(lib/exposure.ts).
+    enabled: SHOW_PROJECTS,
     staleTime: 10 * 60_000,
     retry: (count, err) => isRetriableError(err) && count < 1,
   });

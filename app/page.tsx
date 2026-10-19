@@ -21,6 +21,7 @@ import {
   type Viewport,
 } from "@/lib/queries";
 import { useIsDesktop } from "@/lib/useIsDesktop";
+import { SHOW_PROJECTS } from "@/lib/exposure";
 import { fetchNaverHomepage, fetchTourIntro, haversineMeters } from "@/lib/api";
 import type { Place } from "@/lib/types";
 import { GROUP_LABEL } from "@/lib/types";
@@ -402,7 +403,7 @@ export default function Page() {
       focusAccuracy={locateAccuracy}
       focusRadius={isNearbyMode ? (nearbyQuery.data?.radiusM ?? null) : null}
       isDesktop={isDesktop}
-      projectPins={projectPinsQuery.data ?? []}
+      projectPins={SHOW_PROJECTS ? (projectPinsQuery.data ?? []) : []}
       onUserPan={handleUserPan}
       onViewportChange={setViewport}
     />
