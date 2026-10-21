@@ -114,6 +114,19 @@ export function iconPathFor(group: GroupId, sub?: SubId | null): string {
 const PIN_BADGE_PATH =
   "M13 4H27A8 8 0 0 1 35 12V24A8 8 0 0 1 27 32H24L20 41L16 32H13A8 8 0 0 1 5 24V12A8 8 0 0 1 13 4Z";
 
+/*
+ * [업종을 머리 모양으로 구별 — 2026-10-21 응급처치, 대표 선택 「가」]
+ * 몸통이 모두 네이비라 업종이 얇은 테두리 색으로만 갈려 28px 핀에서는 구별이 안 됐다(라이브
+ * 실측). 색 체계는 11월 브랜드 통일(백로그 39) 전까지 바꾸지 않기로 했으므로(총괄 조건), 색은
+ * 그대로 두고 머리 모양을 업종마다 다르게 한다: 조경회사 네모(기존 배지), 조경수/자재 원,
+ * 공원/수목원 마름모. 세 모양 모두 끝점이 (20, 41)이라 앵커 계산은 그대로다.
+ */
+const PIN_HEAD_PATH: Record<GroupId, string> = {
+  company: PIN_BADGE_PATH,
+  material: "M20 4A14 14 0 0 1 34 18C34 26 25.4 35.6 21.2 40.2A1.6 1.6 0 0 1 18.8 40.2C14.6 35.6 6 26 6 18A14 14 0 0 1 20 4Z",
+  park: "M20 2.5L35.5 18L24.2 29.3L20 41L15.8 29.3L4.5 18Z",
+};
+
 // 브랜드 네이비 — 모든 장소 핀의 바탕색. 그룹은 이제 이 색이 아니라 아래 PIN_ACCENT_COLOR로 구분한다.
 export const PIN_BASE = "#06107D";
 
@@ -186,8 +199,11 @@ export function pinSvg(opts: {
   iconPath: string;
   tipDot?: string;
   selected?: boolean;
+  headPath?: string;
+  ink?: string;
+  rim?: number;
 }): string {
-  const rimWidth = opts.selected ? 2.8 : 1.8;
+  const rimWidth = opts.rim ?? (opts.selected ? 2.8 : 1.8);
   const dotR = opts.selected ? 2.6 : 2.1;
   const gradId = `gb${opts.body.replace("#", "")}`;
   return (
@@ -197,10 +213,10 @@ export function pinSvg(opts: {
     `<stop offset="1" stop-color="${opts.body}"/>` +
     "</linearGradient></defs>" +
     `<ellipse cx="20" cy="43.4" rx="${opts.selected ? 6 : 5.2}" ry="1.9" fill="rgba(20,24,40,${opts.selected ? ".22" : ".16"})"/>` +
-    `<path d="${PIN_BADGE_PATH}" fill="url(#${gradId})" stroke="${opts.accent}" stroke-width="${rimWidth}"/>` +
+    `<path d="${opts.headPath ?? PIN_BADGE_PATH}" fill="url(#${gradId})" stroke="${opts.accent}" stroke-width="${rimWidth}" stroke-linejoin="round"/>` +
     (opts.tipDot ? `<circle cx="20" cy="34.5" r="${dotR}" fill="${opts.tipDot}"/>` : "") +
     '<g transform="translate(11.36 9.36) scale(.72)" fill="none" stroke="' +
-    opts.accent +
+    (opts.ink ?? opts.accent) +
     '" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">' +
     opts.iconPath +
     "</g></svg>"
@@ -208,11 +224,15 @@ export function pinSvg(opts: {
 }
 
 export function placePinSvg(group: GroupId, sub: SubId | null | undefined, selected = false): string {
+  // 테두리를 굵게(2.6, 선택 3.4) 하고 아이콘은 흰색으로 — 업종색은 테두리, 업종 구별은 머리 모양이
+  // 맡는다. 끝의 라임 점은 머리 모양이 다르면 위치가 어긋나 보여 뺐다.
   return pinSvg({
     body: PIN_BASE,
     accent: PIN_ACCENT_COLOR[group] ?? PIN_ACCENT_COLOR.park,
     iconPath: iconPathFor(group, sub),
-    tipDot: PROJECT_PIN_COLOR, // 라임 — 클러스터 뱃지·프로젝트 핀과 같은 브랜드임을 알린다
+    headPath: PIN_HEAD_PATH[group] ?? PIN_BADGE_PATH,
+    ink: "#ffffff",
+    rim: selected ? 3.4 : 2.6,
     selected,
   });
 }

@@ -139,8 +139,23 @@ function pinSizeForLevel(level: number): PinSize {
  * 만드는 마커 개수"뿐이다. 레벨이 8 미만으로 내려가 개별 핀이 다시 의미를 갖는 순간
  * 원래 방식(낱개 마커 + 네이티브 클러스터러)으로 되돌아간다.
  */
-const CLUSTER_ONLY_LEVEL = 8; // 아래 MarkerClusterer의 minLevel과 반드시 같은 값이어야 한다.
+const CLUSTER_ONLY_LEVEL = 8;
 const SYNTHETIC_CLUSTER_THRESHOLD = 150; // 이보다 적으면 원래 방식도 이미 가볍다.
+
+/*
+ * [레벨 6~7에도 카카오 클러스터러를 켠다 — 2026-10-21 응급처치 ⑤, 대표 선택 「가」]
+ * 예전엔 minLevel 8이라 레벨 6~7에는 묶음이 아예 없어 핀이 겹쳤다(라이브 실측 겹침 39~73%,
+ * 손가락 44px 안에 다른 핀이 있는 비율 58~92%). 서울 중심·분당·대구에서 재 보니 기본 칸(60px)
+ * ·5곳 이상은 효과가 약했고, 손가락 터치 영역의 두 배인 88px 칸·2곳 이상이 겹침 0~3%로 낮췄다.
+ * 레벨 8 이상에서 장소가 SYNTHETIC_CLUSTER_THRESHOLD 보다 많으면 여전히 아래 합성 격자가 맡는다.
+ * [되돌리기] minLevel 을 8로 바꾸면 이 변경 전과 같아진다(나머지 두 값은 그대로 둬도 된다).
+ */
+const NATIVE_CLUSTER = { minLevel: 6, gridSize: 88, minClusterSize: 2 } as const;
+
+// 기기의 「동작 줄이기」 설정. 확대 애니메이션·팝인을 이 값에 맞춰 끈다.
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 function clusterTier(count: number): number {
   return count < 10 ? 0 : count < 100 ? 1 : 2;
@@ -175,11 +190,30 @@ function clusterBadgeElement(count: number): HTMLDivElement {
     `border:${border}px solid #fff;box-sizing:border-box;box-shadow:${shadow};` +
     // [등장 트랜지션] 우리가 직접 그리는 격자 뱃지라 진짜 DOM이다 — 작게 시작해 살짝 오버슈트
     // 하며 자리 잡도록, 만든 직후 다음 프레임에서 목표 상태로 바꿔 트랜지션을 태운다.
-    `opacity:0;transform:scale(.5);transition:opacity .2s ease,transform .2s cubic-bezier(.34,1.56,.64,1);`;
-  requestAnimationFrame(() => {
-    el.style.opacity = "1";
-    el.style.transform = "scale(1)";
-  });
+    (prefersReducedMotion()
+      ? ""
+      : `opacity:0;transform:scale(.5);transition:opacity .2s ease,transform .2s cubic-bezier(.34,1.56,.64,1);`);
+  if (!prefersReducedMotion()) {
+    requestAnimationFrame(() => {
+      el.style.opacity = "1";
+      el.style.transform = "scale(1)";
+    });
+  }
+  return el;
+}
+
+/*
+ * [1곳뿐인 칸은 「1」 원 대신 점으로 — 2026-10-21 응급처치 ①]
+ * 라이브 첫 화면에서 숫자 원 138개 중 34개가 「1」이었다(레벨 8에서는 22~45개). 「1」은 아무
+ * 정보가 없는데 묶음과 같은 크기라 지도를 덮는 느낌만 키웠다. 한 곳뿐인 칸은 업종색 테두리를
+ * 두른 작은 네이비 점으로 그리고, 누르면 묶음처럼 확대하지 않고 바로 그 장소를 연다.
+ */
+function singlePlaceDotElement(group: Place["categoryDepth1"]): HTMLDivElement {
+  const el = document.createElement("div");
+  const ring = PIN_ACCENT_COLOR[group] ?? PIN_ACCENT_COLOR.park;
+  el.style.cssText =
+    "cursor:pointer;width:13px;height:13px;border-radius:50%;box-sizing:border-box;" +
+    `background:#06107D;border:2.5px solid ${ring};box-shadow:0 0 0 1.5px #fff,0 1px 4px rgba(6,16,125,.35);`;
   return el;
 }
 
@@ -187,6 +221,7 @@ interface ClusterBucket {
   lat: number;
   lng: number;
   count: number;
+  first: Place; // count 가 1일 때 그 장소(점으로 그리고 누르면 바로 연다)
 }
 
 // [격자 칸 수를 화면 픽셀 폭에 맞춘다 — 모바일에서 배지가 서로 겹쳐 지저분해 보이던 문제]
@@ -213,7 +248,7 @@ function computeClusterBuckets(
   const spanLng = Math.max(bounds.maxLng - bounds.minLng, 1e-6);
   const cellLat = spanLat / cols;
   const cellLng = spanLng / cols;
-  const cells = new Map<string, { sumLat: number; sumLng: number; count: number }>();
+  const cells = new Map<string, { sumLat: number; sumLng: number; count: number; first: Place }>();
   for (const place of places) {
     const [lng, lat] = place.coordinates;
     if (!lat || !lng) continue;
@@ -226,13 +261,14 @@ function computeClusterBuckets(
       cell.sumLng += lng;
       cell.count += 1;
     } else {
-      cells.set(key, { sumLat: lat, sumLng: lng, count: 1 });
+      cells.set(key, { sumLat: lat, sumLng: lng, count: 1, first: place });
     }
   }
   return Array.from(cells.values()).map((c) => ({
     lat: c.sumLat / c.count,
     lng: c.sumLng / c.count,
     count: c.count,
+    first: c.first,
   }));
 }
 
@@ -263,6 +299,7 @@ function placeMarkerImage(kakao: any, place: Place, selected = false, size?: Pin
  * 참고) — 실제 마커를 건드리지 않으므로 이 문제가 아예 발생할 수 없다.
  */
 const POP_IN_FRAMES = [0.42, 1.16, 0.93, 1.03, 1] as const;
+const POP_IN_MAX = 30; // 새 마커가 이보다 많으면 팝인 없이 제 크기로 바로 그린다(응급처치 ③)
 
 function animateMarkerFrames(
   kakao: any,
@@ -540,6 +577,7 @@ export default function MapCanvas({
 }
 .gm-pin-selected-body { transform-origin: 50% 100%; animation: gmPinDrop .48s cubic-bezier(.34,1.56,.64,1) both; }
 .gm-pin-selected-glow { animation: gmPinGlow 2.2s ease-in-out infinite; filter: blur(3px); }
+@media (prefers-reduced-motion: reduce) { .gm-pin-selected-body, .gm-pin-selected-glow { animation: none; } }
 `;
     document.head.appendChild(style);
   }, []);
@@ -722,8 +760,10 @@ export default function MapCanvas({
         clustererRef.current = new kakao.maps.MarkerClusterer({
           map,
           averageCenter: true,
-          // 레벨 8부터 묶는다. 6~7 은 작은 핀으로 개별 장소를 보여주는 구간이다(pinSizeForLevel).
-          minLevel: 8,
+          // 값과 근거는 위 NATIVE_CLUSTER 한 곳에서 관리한다(되돌리기도 그 한 줄).
+          minLevel: NATIVE_CLUSTER.minLevel,
+          gridSize: NATIVE_CLUSTER.gridSize,
+          minClusterSize: NATIVE_CLUSTER.minClusterSize,
           /*
            * [클러스터 클릭 확대를 직접 만든다 — 2026-09-10]
            * disableClickZoom 기본값(false)은 카카오가 클러스터 범위에 맞춰 줌 레벨을 한 번에
@@ -767,7 +807,7 @@ export default function MapCanvas({
         // 큰 클러스터든 작은 클러스터든 항상 1레벨씩만, 클러스터 중심을 기준으로 부드럽게
         // 확대한다 — 큰 뭉치는 두세 번 눌러야 다 풀리지만, 매번 확실히 애니메이션이 붙는다.
         kakao.maps.event.addListener(clustererRef.current, "clusterclick", (cluster: any) => {
-          map.setLevel(map.getLevel() - 1, { anchor: cluster.getCenter(), animate: true });
+          map.setLevel(map.getLevel() - 1, { anchor: cluster.getCenter(), animate: !prefersReducedMotion() });
         });
       });
     }
@@ -834,17 +874,15 @@ export default function MapCanvas({
     const level = zoomLevel ?? map.getLevel();
     const wantsSyntheticClusters = level >= CLUSTER_ONLY_LEVEL && places.length > SYNTHETIC_CLUSTER_THRESHOLD;
 
+    /*
+     * [새 표식을 먼저 그리고 옛 표식을 나중에 걷는다 — 2026-10-21 응급처치 ②]
+     * 예전엔 레벨 경계를 넘는 순간 옛 표식(낱개 마커 또는 격자 뱃지)부터 지우고 새 것을 만들었다.
+     * 그 사이 수백 개를 만드는 동안 지도가 텅 비어 보였다(대표 신고 「확대하면 한참 빈 지도」).
+     * 데이터는 새 응답이 올 때까지 이전 것을 그대로 쓰므로(queries.ts 의 placeholderData),
+     * 표식만 순서를 바꿔 「새 것 그리기 → 옛 것 걷기」로 하면 화면이 비는 순간이 없다.
+     */
     if (wantsSyntheticClusters) {
-      // 방금 이 레벨로 넘어왔다면 낱개 마커가 아직 남아 있을 수 있다 — 어차피 안 보일
-      // 것들이니 전부 걷어낸다.
-      if (Object.keys(markersRef.current).length) {
-        clusterer.clear();
-        Object.values(markersRef.current).forEach((m: any) => m.setMap(null));
-        markersRef.current = {};
-        markerPlacesRef.current = {};
-      }
-
-      syntheticClusterRef.current.forEach((o) => o.setMap(null));
+      const staleOverlays = syntheticClusterRef.current;
       const bounds = map.getBounds();
       const sw = bounds.getSouthWest();
       const ne = bounds.getNorthEast();
@@ -860,24 +898,41 @@ export default function MapCanvas({
         cols
       );
       syntheticClusterRef.current = buckets.map((bucket) => {
-        const content = clusterBadgeElement(bucket.count);
         const position = new kakao.maps.LatLng(bucket.lat, bucket.lng);
+        if (bucket.count === 1) {
+          const place = bucket.first;
+          const content = singlePlaceDotElement(place.categoryDepth1);
+          content.addEventListener("click", () => {
+            onSelectPlaceRef.current(place.placeId);
+            onPrefetchPlaceRef.current?.(place);
+          });
+          const overlay = new kakao.maps.CustomOverlay({ position, content, zIndex: MAP_OVERLAY_Z.clusterBadge });
+          overlay.setMap(map);
+          return overlay;
+        }
+        const content = clusterBadgeElement(bucket.count);
         // 실제 클러스터 클릭과 같은 동작: 이 칸 중심을 기준으로 한 단계만 부드럽게 확대한다.
         content.addEventListener("click", () => {
-          map.setLevel(map.getLevel() - 1, { anchor: position, animate: true });
+          map.setLevel(map.getLevel() - 1, { anchor: position, animate: !prefersReducedMotion() });
         });
         const overlay = new kakao.maps.CustomOverlay({ position, content, zIndex: MAP_OVERLAY_Z.clusterBadge });
         overlay.setMap(map);
         return overlay;
       });
+      // 새 뱃지를 다 올린 뒤에 옛 뱃지와(방금 이 레벨로 넘어왔다면) 낱개 마커를 걷는다.
+      staleOverlays.forEach((o) => o.setMap(null));
+      if (Object.keys(markersRef.current).length) {
+        clusterer.clear();
+        Object.values(markersRef.current).forEach((m: any) => m.setMap(null));
+        markersRef.current = {};
+        markerPlacesRef.current = {};
+      }
       return;
     }
 
-    // 합성 클러스터 모드에서 벗어났다면(확대해서 개별 핀이 다시 의미 있어졌다면) 걷어낸다.
-    if (syntheticClusterRef.current.length) {
-      syntheticClusterRef.current.forEach((o) => o.setMap(null));
-      syntheticClusterRef.current = [];
-    }
+    // 합성 클러스터 모드에서 벗어났다면 그 뱃지는 아래에서 낱개 마커를 다 올린 뒤에 걷는다(위 ② 참고).
+    const staleSynthetic = syntheticClusterRef.current;
+    syntheticClusterRef.current = [];
 
     // 지금 보고 있는 축척에 맞는 크기로 만든다. 줌이 바뀌면 위 zoom_changed 가 갈아 끼운다.
     const currentPinSize = pinSizeForLevel(level);
@@ -921,6 +976,15 @@ export default function MapCanvas({
     }
 
     // 이미 떠 있는 장소는 마커를 새로 만들지 않되, 참조 데이터는 최신으로 갱신한다.
+    /*
+     * [팝인은 몇 개 안 될 때만 — 2026-10-21 응급처치 ③]
+     * 레벨 8→7 처럼 경계를 넘으면 새 마커가 한 번에 수백 개(라이브 643개) 생긴다. 그걸 모두 아주
+     * 작게 만든 뒤 하나하나 키우니 수백 개가 동시에 튀어오르며 화면이 한동안 비어 보였다. 지도를
+     * 조금 옮겨 몇 개만 새로 나타날 때만 팝인하고, 많을 때나 기기에서 「동작 줄이기」를 켰을 때는
+     * 처음부터 제 크기로 만든다.
+     */
+    const newCount = places.reduce((n, p) => (markersRef.current[p.placeId] ? n : n + 1), 0);
+    const popIn = newCount <= POP_IN_MAX && !prefersReducedMotion();
     const toAdd: any[] = [];
     for (const place of places) {
       markerPlacesRef.current[place.placeId] = place;
@@ -929,10 +993,9 @@ export default function MapCanvas({
       const [lng, lat] = place.coordinates;
       if (!lat || !lng) continue;
       const placeId = place.placeId;
-      // [팝인] 최종 크기로 바로 만들지 않고 작게 시작한다 — 곧바로 popInMarker가 목표 크기까지
-      // 튀어오르듯 키운다. 최종 프레임이 항상 currentPinSize 그대로이므로, 애니메이션이 어떤
-      // 이유로든 중간에 폐기돼도(줌 변경 등) 마커가 이상한 크기로 멈추지 않는다.
-      const image = placeMarkerImage(kakao, place, false, scalePinSize(currentPinSize, POP_IN_FRAMES[0]));
+      // [팝인] 할 때는 작게 시작해 popIn 프레임이 목표 크기까지 키운다. 최종 프레임이 항상
+      // currentPinSize 그대로이므로, 중간에 폐기돼도(줌 변경 등) 이상한 크기로 멈추지 않는다.
+      const image = placeMarkerImage(kakao, place, false, popIn ? scalePinSize(currentPinSize, POP_IN_FRAMES[0]) : currentPinSize);
       const marker = new kakao.maps.Marker({ position: new kakao.maps.LatLng(lat, lng), image });
       kakao.maps.event.addListener(marker, "click", () => {
         const current = markerPlacesRef.current[placeId];
@@ -1067,9 +1130,10 @@ export default function MapCanvas({
       }
       markersRef.current[placeId] = marker;
       toAdd.push(marker);
-      animateMarkerFrames(kakao, marker, place, currentPinSize, POP_IN_FRAMES, markerAnimJobRef.current, placeId, 30);
+      if (popIn) animateMarkerFrames(kakao, marker, place, currentPinSize, POP_IN_FRAMES, markerAnimJobRef.current, placeId, 30);
     }
     if (toAdd.length) clusterer.addMarkers(toAdd);
+    staleSynthetic.forEach((o) => o.setMap(null));
   }, [places, zoomLevel]);
 
   // [프로젝트 연동] 검색/필터와 무관하게 항상 떠 있는 별도 레이어. 클러스터러에는 섞지 않고
