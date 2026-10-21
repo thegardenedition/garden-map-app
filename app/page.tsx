@@ -117,6 +117,8 @@ export default function Page() {
   // 드롭다운이 열려 있을 때만 컨테이너 z-index를 --z-search-suggest(42)로 올리고,
   // 닫히면 원래 값으로 되돌려 다른 레이어링(예: 필터 팝오버)에 영향이 없게 한다.
   const [searchSuggestOpen, setSearchSuggestOpen] = useState(false);
+  // 장소 상세 카드의 실제 높이 — 목록 시트를 그만큼만 올려 카드 뒤에 숨긴다(PlaceDetailSheet).
+  const [detailSheetH, setDetailSheetH] = useState<number | null>(null);
   // [지도만 보기] 검색·필터가 끝난 뒤에도 상단 스택이 계속 지도 위 공간을 차지해 답답하다는
   // 피드백을 받았다. 상단 스택 전체(배지·검색바·칩)를 잠깐 걷어내는 토글이다. 상태는 그대로
   // 두고 화면에서만 숨기므로, 다시 누르면 검색어·필터가 그대로 남아 있다.
@@ -478,6 +480,7 @@ export default function Page() {
           껍데기는 터치를 흘려보내고, 실제 조작이 필요한 자식만 받는다. */}
       <div
         ref={topStackRef}
+        data-gm-map-top
         className={`pointer-events-none absolute inset-x-3 top-3 ${
           searchSuggestOpen ? "z-[var(--z-search-suggest)]" : "z-[var(--z-mobile-topstack)]"
         }`}
@@ -594,6 +597,7 @@ export default function Page() {
         onSnapChange={setSheetSnap}
         dragHandleLabel="결과 목록 시트"
         minTopPx={sheetMinTop}
+        coverPx={selectedPlaceId ? detailSheetH : null}
         floatingActions={
           // [두 버튼을 한 덩어리로] 예전엔 원형 버튼 두 개가 각자 그림자를 지고 따로 떠 있어
           // 지도 위에 얹힌 장치가 하나 더 있는 것처럼 보였다. 기능은 그대로 두고(따로따로
@@ -632,7 +636,12 @@ export default function Page() {
         <PlaceList places={places} hasSearched={hasSearched && !isLoading} onSelect={handleSelect} />
       </BottomSheet>
 
-      <PlaceDetailSheet place={selectedPlace} region={region} onClose={() => selectPlace(null)} />
+      <PlaceDetailSheet
+        place={selectedPlace}
+        region={region}
+        onClose={() => selectPlace(null)}
+        onHeightChange={setDetailSheetH}
+      />
     </div>
   );
 }

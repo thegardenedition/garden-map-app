@@ -36,6 +36,7 @@ export default function BottomSheet({
   dragHandleLabel,
   minTopPx = 0,
   floatingActions,
+  coverPx = null,
 }: {
   snap: SheetSnap;
   onSnapChange: (s: SheetSnap) => void;
@@ -46,6 +47,10 @@ export default function BottomSheet({
   // 끌든 항상 시트를 따라 움직인다. 예전에는 지도 위에 30vh 로 좌표를 박아 뒀는데, 시트가
   // half(50%)로 열리는 순간 그 아래로 완전히 묻혀 눌리지 않았다.
   floatingActions?: React.ReactNode;
+  // 위에 다른 시트(장소 상세 카드)가 떠 있을 때 그 높이(px). 주어지면 스냅 대신 정확히 그만큼만
+  // 올라와 그 시트 뒤에 숨는다 — 목록 머리줄이 카드 위로 삐져나오지 않고, floatingActions 는
+  // 카드 윗변 바로 위에 붙어 카드와 함께 오르내린다(2026-10-21).
+  coverPx?: number | null;
 }) {
   const dragControls = useDragControls();
   const [vh, setVh] = useState(() => (typeof window === "undefined" ? 800 : window.innerHeight));
@@ -59,9 +64,10 @@ export default function BottomSheet({
   }, []);
 
   useEffect(() => {
-    const controls = animate(y, pxFor(snap, vh, minTopPx), { type: "spring", damping: 32, stiffness: 300 });
+    const target = coverPx != null ? Math.max(vh - coverPx, minTopPx) : pxFor(snap, vh, minTopPx);
+    const controls = animate(y, target, { type: "spring", damping: 32, stiffness: 300 });
     return () => controls.stop();
-  }, [snap, vh, minTopPx, y]);
+  }, [snap, vh, minTopPx, y, coverPx]);
 
   /*
    * [화면 밖 목록 — 2026-09-09 실측으로 드러난 문제]

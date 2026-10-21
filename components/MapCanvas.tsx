@@ -40,11 +40,12 @@ declare global {
 // 바로 실제 결과를 보여줄 수 있다. 사용자가 다른 지역을 보려면 축소하거나 지역 필터를 쓰면 된다.
 const SEOUL_METRO = { lat: 37.49, lng: 127.02, level: 9 };
 
-// [선택한 핀이 바텀시트 경계에 붙어 보이던 문제] app/page.tsx가 장소를 선택하면
-// <BottomSheet snap={selectedPlaceId ? "peek" : sheetSnap} .../> 로 시트를 강제로 "peek"
-// 스냅으로 연다. BottomSheet.tsx의 SNAP_VH.peek 값(화면 높이의 30%)과 반드시 같아야 한다 —
-// 두 파일이 서로 다른 곳에서 같은 값을 들고 있어 어긋날 위험이 있지만, 시트 코드를 이
-// 컴포넌트가 import하지 않아 DOM을 직접 재는 쪽보다 이 편이 더 단순하다고 판단했다.
+// [선택한 핀이 바텀시트 경계에 붙어 보이던 문제] 처음엔 장소를 선택하면 열리는 리스트
+// 시트의 peek 높이(화면의 30%)를 상수로 박아 핀을 그만큼 위로 올렸다. 그런데 실제로 그 위를
+// 덮는 건 PlaceDetailSheet(내용만큼, 최대 70dvh)이고 위쪽엔 배지·검색바·칩 묶음도 떠 있다 —
+// 휴대폰에선 상세 시트가 화면 절반 가까이 올라와 핀이 시트 윗가장자리에 반쯤 가려졌다
+// (2026-10-21 대표 신고). 이제는 두 요소를 data 속성으로 찾아 실제 높이를 재고, 그 사이
+// 남는 띠의 한가운데에 핀을 놓는다. 이 값은 요소를 못 찾았을 때만 쓰는 대비값이다.
 const SELECTED_PIN_SHEET_VH = 0.3;
 
 /*
@@ -1416,8 +1417,36 @@ export default function MapCanvas({
      */
     let target = new kakao.maps.LatLng(place.coordinates[1], place.coordinates[0]);
     if (!isDesktopRef.current) {
-      const h = mapDivRef.current?.clientHeight;
-      if (h) {
+      const mapDiv = mapDivRef.current;
+      const h = mapDiv?.clientHeight;
+      if (mapDiv && h) {
+        // 핀을 놓을 띠 = 위쪽 떠 있는 묶음 아래 ~ 상세 시트 위. 상세 시트는 이 effect와 같은
+        // 렌더에서 DOM에 들어와 아직 아래에서 올라오는 중(transform)이지만, offsetHeight는
+        // transform과 무관해서 최종 높이를 그대로 준다.
+        const mapRect = mapDiv.getBoundingClientRect();
+        const topEl = document.querySelector<HTMLElement>("[data-gm-map-top]");
+        const sheetEl = document.querySelector<HTMLElement>("[data-gm-detail-sheet]");
+        const topPx = topEl ? Math.min(Math.max(topEl.getBoundingClientRect().bottom - mapRect.top, 0), h) : 0;
+        const sheetPx = sheetEl ? sheetEl.offsetHeight : h * SELECTED_PIN_SHEET_VH;
+        const bandBottom = Math.max(h - sheetPx, topPx);
+        const bandCenter = (topPx + bandBottom) / 2;
+        const shiftPx = h / 2 - bandCenter;
+
+        // [가려질 때만 움직인다 — 2026-10-21] 이미 핀이 하나하나 보이는 축척(레벨 5 이하)이고,
+        // 고른 핀이 지금 자리 그대로 위 묶음과 시트 사이에 다 들어온다면 지도를 건드리지 않는다.
+        // 확대도 이동도 없이 핀만 선택 모양으로 바뀐다 — 화면이 튀지 않는다.
+        const nowProj = map.getProjection();
+        if (nowProj && map.getLevel() <= 5) {
+          const tip = nowProj.containerPointFromCoords(target);
+          const margin = 8;
+          const fits =
+            tip.x >= 24 &&
+            tip.x <= mapDiv.clientWidth - 24 &&
+            tip.y - size.anchorY >= topPx + margin &&
+            tip.y <= bandBottom - margin;
+          if (fits) return;
+        }
+
         const prevCenter = map.getCenter();
         const prevLevel = map.getLevel();
         map.setLevel(4);
@@ -1426,7 +1455,7 @@ export default function MapCanvas({
         if (proj) {
           const centerPoint = proj.containerPointFromCoords(map.getCenter());
           target = proj.coordsFromContainerPoint(
-            new kakao.maps.Point(centerPoint.x, centerPoint.y + (h * SELECTED_PIN_SHEET_VH) / 2)
+            new kakao.maps.Point(centerPoint.x, centerPoint.y + shiftPx)
           );
         }
         map.setLevel(prevLevel);

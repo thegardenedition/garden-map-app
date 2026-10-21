@@ -50,7 +50,7 @@ export default function ShareButton({
       type="button"
       onClick={handleShare}
       aria-label="공유하기"
-      className="tp-caption rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] px-4 py-2.5 text-[var(--color-deep-blue)]"
+      className="tp-caption inline-flex min-h-[44px] items-center rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] px-4 py-2.5 text-[var(--color-deep-blue)]"
     >
       {copied ? "링크 복사됨" : "공유하기"}
     </button>
