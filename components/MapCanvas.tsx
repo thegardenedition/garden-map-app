@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import type { Place, ProjectPin } from "@/lib/types";
 import { SUB_DEFS, formatDistance } from "@/lib/types";
+import { SHORT_SCREEN_QUERY } from "@/lib/useIsDesktop";
 import {
   PIN_ACCENT_COLOR,
   PIN_COMPACT,
@@ -1425,9 +1426,12 @@ export default function MapCanvas({
         // 핀을 놓을 띠 = 위쪽 떠 있는 묶음 아래 ~ 상세 시트 위. 상세 시트는 이 effect와 같은
         // 렌더에서 DOM에 들어와 아직 아래에서 올라오는 중(transform)이지만, offsetHeight는
         // transform과 무관해서 최종 높이를 그대로 준다.
+        // 높이 낮은 화면(휴대폰 가로)은 작은 카드를 쓰지 않으므로 카드 이전 계산 그대로 둔다
+        // (11-09 가로 전용 카드 때 다시 본다). 이때 topPx 0·시트 30%면 예전 식과 같다.
+        const short = window.matchMedia(SHORT_SCREEN_QUERY).matches;
         const mapRect = mapDiv.getBoundingClientRect();
-        const topEl = document.querySelector<HTMLElement>("[data-gm-map-top]");
-        const sheetEl = document.querySelector<HTMLElement>("[data-gm-detail-sheet]");
+        const topEl = short ? null : document.querySelector<HTMLElement>("[data-gm-map-top]");
+        const sheetEl = short ? null : document.querySelector<HTMLElement>("[data-gm-detail-sheet]");
         const topPx = topEl ? Math.min(Math.max(topEl.getBoundingClientRect().bottom - mapRect.top, 0), h) : 0;
         const sheetPx = sheetEl ? sheetEl.offsetHeight : h * SELECTED_PIN_SHEET_VH;
         const bandBottom = Math.max(h - sheetPx, topPx);
@@ -1438,7 +1442,7 @@ export default function MapCanvas({
         // 고른 핀이 지금 자리 그대로 위 묶음과 시트 사이에 다 들어온다면 지도를 건드리지 않는다.
         // 확대도 이동도 없이 핀만 선택 모양으로 바뀐다 — 화면이 튀지 않는다.
         const nowProj = map.getProjection();
-        if (nowProj && map.getLevel() <= 5) {
+        if (nowProj && !short && map.getLevel() <= 5) {
           const tip = nowProj.containerPointFromCoords(target);
           const margin = 8;
           const fits =

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useDragControls, type PanInfo } from "framer-motion";
 import type { Place, Region } from "@/lib/types";
+import { useIsShortScreen } from "@/lib/useIsDesktop";
 import DetailContent from "./DetailContent";
 
 /*
@@ -43,11 +44,14 @@ export default function PlaceDetailSheet({
 }) {
   const dragControls = useDragControls();
   const sheetRef = useRef<HTMLDivElement>(null);
+  // 높이 500px 이하(휴대폰 가로)에선 작은 카드 단계 없이 예전처럼 전체 상세로만 연다.
+  const cardMode = !useIsShortScreen();
 
   // 카드↔전체 상세 전환, 홈페이지 조회 결과 도착 등으로 내용 높이가 바뀌면 다시 알린다.
+  // 카드를 안 쓰는 화면에선 알리지 않는다 — 목록 시트도 예전처럼 peek 에 머문다.
   useEffect(() => {
     const el = sheetRef.current;
-    if (!place || !el) {
+    if (!place || !el || !cardMode) {
       onHeightChange?.(null);
       return;
     }
@@ -56,13 +60,18 @@ export default function PlaceDetailSheet({
     const ro = new ResizeObserver(report);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [place, onHeightChange]);
+  }, [place, onHeightChange, cardMode]);
   // 어느 장소에 대해 펼쳤는지를 기억한다 — 다른 핀을 고르면 따로 되돌리지 않아도 카드로 시작한다.
   const [expandedFor, setExpandedFor] = useState<string | null>(null);
-  const expanded = !!place && expandedFor === place.placeId;
+  const expanded = !cardMode || (!!place && expandedFor === place.placeId);
   const expand = () => place && setExpandedFor(place.placeId);
+  const toggle = () => (expanded ? setExpandedFor(null) : expand());
 
   function handleDragEnd(_: unknown, info: PanInfo) {
+    if (!cardMode) {
+      if (info.offset.y > 100 || info.velocity.y > 500) onClose();
+      return;
+    }
     if (info.offset.y < -40 || info.velocity.y < -500) {
       expand();
     } else if (info.offset.y > 100 || info.velocity.y > 500) {
@@ -86,7 +95,8 @@ export default function PlaceDetailSheet({
             key="sheet"
             ref={sheetRef}
             data-gm-detail-sheet
-            className="gpu absolute inset-x-0 bottom-0 z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-t-[20px] bg-white shadow-[0_-20px_50px_-10px_rgba(0,0,0,0.12)]"
+            // 카드 하한 20dvh: 768 세로에서 내용 높이만으론 19%였다(디자인 진단 10-21 승인 조건).
+            className={`gpu absolute inset-x-0 bottom-0 z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-t-[20px] bg-white shadow-[0_-20px_50px_-10px_rgba(0,0,0,0.12)] ${expanded ? "" : "min-h-[20dvh]"}`}
             initial={{ y: "105%" }}
             animate={{ y: 0 }}
             exit={{ y: "105%" }}
@@ -95,7 +105,7 @@ export default function PlaceDetailSheet({
             dragListener={false}
             dragControls={dragControls}
             dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={{ top: 0.2, bottom: 0.5 }}
+            dragElastic={{ top: cardMode ? 0.2 : 0, bottom: 0.5 }}
             onDragEnd={handleDragEnd}
           >
             <div className="relative flex-shrink-0" style={{ minHeight: 32 }}>
@@ -104,10 +114,12 @@ export default function PlaceDetailSheet({
                 className="flex items-center justify-center"
                 style={{ touchAction: "none", minHeight: 44 }}
                 onPointerDown={(e) => dragControls.start(e)}
-                onClick={() => (expanded ? setExpandedFor(null) : expand())}
-                role="button"
-                aria-label={expanded ? "상세 접기" : "상세 펼치기"}
-                aria-expanded={expanded}
+                {...(cardMode && {
+                  onClick: toggle,
+                  role: "button",
+                  "aria-label": expanded ? "상세 접기" : "상세 펼치기",
+                  "aria-expanded": expanded,
+                })}
               >
                 <div className="h-[5px] w-9 cursor-grab rounded-full bg-[#DADDEF] active:cursor-grabbing" />
               </div>

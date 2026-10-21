@@ -277,9 +277,13 @@ export default function DetailContent({
         {compact && onExpand && (
           <button
             onClick={onExpand}
-            className="tp-caption inline-flex min-h-[44px] items-center rounded-2xl border-[1.5px] border-[#DADDEF] px-4 py-2.5 text-[var(--color-deep-blue)]"
+            aria-expanded={false}
+            className="tp-caption inline-flex min-h-[44px] items-center gap-1 rounded-2xl border-[1.5px] border-[#DADDEF] px-4 py-2.5 text-[var(--color-deep-blue)]"
           >
-            자세히 ▴
+            자세히
+            <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M2.5 7.5 6 4l3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
         )}
       </div>

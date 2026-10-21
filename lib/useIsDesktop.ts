@@ -25,3 +25,22 @@ function getServerSnapshot() {
 export function useIsDesktop(): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
+
+// [높이가 낮은 화면 — 휴대폰 가로] 상세 작은 카드는 세로 화면용이다. 높이 500px 이하에선
+// 카드도 화면 절반을 차지해 지도 띠가 45px 남았다(2026-10-21 실측 844×390). 가로용 한 줄
+// 카드는 11-09 개편에서 따로 만들고, 그때까지 이 구간은 카드 이전 동작을 그대로 쓴다.
+export const SHORT_SCREEN_QUERY = "(max-height: 500px)";
+
+function subscribeShort(callback: () => void) {
+  const mql = window.matchMedia(SHORT_SCREEN_QUERY);
+  mql.addEventListener("change", callback);
+  return () => mql.removeEventListener("change", callback);
+}
+
+export function useIsShortScreen(): boolean {
+  return useSyncExternalStore(
+    subscribeShort,
+    () => window.matchMedia(SHORT_SCREEN_QUERY).matches,
+    () => false
+  );
+}
