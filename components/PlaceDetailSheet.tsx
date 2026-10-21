@@ -126,9 +126,11 @@ export default function PlaceDetailSheet({
             data-gm-detail-sheet
             // [B안 떠 있는 카드 — 2026-10-22 대표 선택] 화면 가장자리에서 띄운 2겹(바깥 테 + 흰 안쪽)
             // 둥근 카드. 휴대폰 가로(cardMode 아님)는 예전 바닥 시트 그대로.
+            // 바닥 24px: 카카오 로고·저작권 표기가 지도 좌하단 바닥에서 19px 높이를 차지한다(라이브
+            // 실측 x 6~142, 바닥 0~19). 카카오 약관상 가리면 안 돼서 그 위로 5px 띄운다.
             className={
               cardMode
-                ? "gpu absolute inset-x-2.5 bottom-[max(14px,calc(env(safe-area-inset-bottom)+6px))] z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-[30px] bg-[var(--card-bezel)] p-1.5 shadow-[var(--card-shadow)]"
+                ? "gpu absolute inset-x-2.5 bottom-[max(24px,calc(env(safe-area-inset-bottom)+6px))] z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-[30px] bg-[var(--card-bezel)] p-1.5 shadow-[var(--card-shadow)]"
                 : "gpu absolute inset-x-0 bottom-0 z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-t-[20px] bg-white shadow-[0_-20px_50px_-10px_rgba(0,0,0,0.12)]"
             }
             initial={{ y: "105%" }}
