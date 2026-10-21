@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import type { Place, Region } from "@/lib/types";
 import { SUB_DEFS } from "@/lib/types";
-import { CategoryIcon, GROUP_COLOR, InfoIcon, PIN_ACCENT_COLOR } from "@/lib/icons";
+import { CategoryIcon, GROUP_COLOR, InfoIcon } from "@/lib/icons";
 import { fetchNaverHomepage, fetchTourIntro, kakaoDirLink } from "@/lib/api";
 import { kakaoPlaceLink } from "@/lib/shareLink";
 import ShareButton from "./ShareButton";
@@ -101,20 +101,26 @@ function formatBusinessCategory(raw: string | null | undefined): string | null {
  * 모서리). 업종 타일+이름 머리, 길찾기 알약 하나만 채우고 나머지는 둥근 아이콘 버튼.
  * 색은 globals.css 의 --card-* 한 곳에서만 온다. 데스크톱 사이드바는 look 없이 그대로.
  */
-const FLOAT_ROUND_BTN =
-  "inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--card-soft)] text-[var(--card-primary)] transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100";
+// 키보드 포커스 링(2px 딥블루, 2px 띄움) — 디자인 진단 10-22 필수 조건.
+const FLOAT_FOCUS =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--card-primary)]";
+// 아이콘 22px + 글자 12.5px/600 을 세로로 쌓은 같은 폭 타일(높이 60px).
+const FLOAT_TILE = `flex h-[60px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl text-[12.5px] font-semibold tracking-[-0.01em] transition-[transform,background-color] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100 ${FLOAT_FOCUS}`;
+const FLOAT_TILE_SOFT = "bg-[var(--card-soft)] text-[var(--card-primary)]";
 
 export default function DetailContent({
   place,
   region,
   compact = false,
   onExpand,
+  onCollapse,
   look,
 }: {
   place: Place;
   region: Region;
   compact?: boolean;
   onExpand?: () => void;
+  onCollapse?: () => void;
   look?: "float";
 }) {
   const [leadModalOpen, setLeadModalOpen] = useState(false);
@@ -146,19 +152,16 @@ export default function DetailContent({
         <>
           {/* 오른쪽 48px 은 시트의 닫기 버튼 자리라 비워 둔다. */}
           <div className="flex items-center gap-3 pr-11">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[var(--card-primary)]">
-              <CategoryIcon
-                group={place.categoryDepth1}
-                sub={place.categoryDepth2}
-                size={24}
-                color={PIN_ACCENT_COLOR[place.categoryDepth1]}
-              />
+            {/* 업종 아이콘은 흰색 하나로 — 색이 아니라 모양으로 구별한다(지도 핀과 같은 규칙). */}
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[var(--card-primary)] text-[var(--card-on-primary)]">
+              <CategoryIcon group={place.categoryDepth1} sub={place.categoryDepth2} size={26} color="currentColor" />
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="truncate text-[12.5px] font-semibold text-[var(--card-meta)]">
                 {subDef?.label ?? ""}
               </span>
-              <h3 className="truncate text-[20px] font-extrabold leading-snug tracking-[-0.03em] text-[var(--card-title)]">
+              {/* 긴 업체명이 잘리지 않게 2줄까지(카드 약 +26px, 상한 30% 안). */}
+              <h3 className="line-clamp-2 break-words text-[20px] font-extrabold leading-snug tracking-[-0.03em] text-[var(--card-title)]">
                 {place.placeName}
               </h3>
             </div>
@@ -285,57 +288,70 @@ export default function DetailContent({
       )}
 
       {float ? (
-        <div className="mt-3.5 flex items-center gap-2">
+        /* [버튼 넷을 같은 크기 타일로 — 2026-10-22 대표 "아이콘이 안 보이고 의도가 안 읽힌다"]
+           아이콘만 있는 둥근 버튼은 뜻이 읽히지 않았다. 지도 앱들이 쓰는 방식대로 아이콘 아래에
+           글자를 붙인 같은 폭 타일로 두고, 길찾기만 딥블루로 채워 첫 행동을 분명히 한다. */
+        <div className="mt-3.5 flex gap-1.5">
           <a
-            className="group flex h-[52px] min-w-0 flex-1 items-center justify-between rounded-full bg-[var(--card-primary)] py-0 pl-5 pr-1.5 text-[15px] font-bold text-[var(--card-on-primary)] transition-[transform,background-color] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.98] active:bg-[var(--card-primary-pressed)] motion-reduce:transition-none max-[360px]:pl-4"
+            className={`${FLOAT_TILE} bg-[var(--card-primary)] text-[var(--card-on-primary)] active:bg-[var(--card-primary-pressed)]`}
             href={kakaoDirLink(place.placeName, place.coordinates[1], place.coordinates[0])}
             target="_blank"
             rel="noopener noreferrer"
           >
+            <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2.8l9.2 9.2-9.2 9.2L2.8 12z" />
+              <path d="M9 15v-3.5h6" />
+              <path d="M12.5 9l2.5 2.5-2.5 2.5" />
+            </svg>
             길찾기
-            {/* 폭 360 이하에선 화살표 원을 빼 둥근 버튼 셋과 한 줄에 들어가게 한다. */}
-            <span aria-hidden className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--card-arrow-bg)] transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-0.5 motion-reduce:transition-none max-[360px]:hidden">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 12h14" />
-                <path d="M13 6l6 6-6 6" />
-              </svg>
-            </span>
           </a>
           {homepageUrl && (
-            <a className={FLOAT_ROUND_BTN} href={homepageUrl} target="_blank" rel="noopener noreferrer" aria-label="홈페이지 열기">
-              <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+            <a className={`${FLOAT_TILE} ${FLOAT_TILE_SOFT}`} href={homepageUrl} target="_blank" rel="noopener noreferrer">
+              <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="9" />
                 <path d="M3 12h18" />
                 <path d="M12 3a14 14 0 0 1 0 18" />
                 <path d="M12 3a14 14 0 0 0 0 18" />
               </svg>
+              홈페이지
             </a>
           )}
           {!compact && place.homepage && (
-            <a className={FLOAT_ROUND_BTN} href={place.homepage} target="_blank" rel="noopener noreferrer" aria-label="카카오맵에서 보기">
-              <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+            <a className={`${FLOAT_TILE} ${FLOAT_TILE_SOFT}`} href={place.homepage} target="_blank" rel="noopener noreferrer">
+              <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 21s-6.5-6.2-6.5-11.2A6.5 6.5 0 0 1 18.5 9.8C18.5 14.8 12 21 12 21z" />
                 <circle cx="12" cy="9.8" r="2.4" />
               </svg>
+              카카오맵
             </a>
           )}
           <ShareButton
-            className={FLOAT_ROUND_BTN}
+            className={`${FLOAT_TILE} ${FLOAT_TILE_SOFT}`}
             title={place.placeName}
             text={place.address}
             url={kakaoPlaceLink(place.placeName, place.coordinates[1], place.coordinates[0])}
           >
-            <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+            <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 15V4" />
               <path d="M8 8l4-4 4 4" />
               <path d="M5 13v6h14v-6" />
             </svg>
+            공유
           </ShareButton>
           {compact && onExpand && (
-            <button onClick={onExpand} aria-expanded={false} aria-label="자세히 보기" className={FLOAT_ROUND_BTN}>
-              <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <button onClick={onExpand} aria-expanded={false} className={`${FLOAT_TILE} ${FLOAT_TILE_SOFT}`}>
+              <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 14l5-5 5 5" />
               </svg>
+              자세히
+            </button>
+          )}
+          {!compact && onCollapse && (
+            <button onClick={onCollapse} aria-expanded={true} className={`${FLOAT_TILE} ${FLOAT_TILE_SOFT}`}>
+              <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 10l5 5 5-5" />
+              </svg>
+              접기
             </button>
           )}
         </div>

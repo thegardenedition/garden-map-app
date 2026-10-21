@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useDragControls, type PanInfo } from "framer-motion";
+import { AnimatePresence, motion, useDragControls, useReducedMotion, type PanInfo } from "framer-motion";
 import type { Place, Region } from "@/lib/types";
 import { useIsShortScreen } from "@/lib/useIsDesktop";
 import DetailContent from "./DetailContent";
@@ -71,6 +71,30 @@ export default function PlaceDetailSheet({
   const expanded = !cardMode || (!!place && expandedFor === place.placeId);
   const expand = () => place && setExpandedFor(place.placeId);
   const toggle = () => (expanded ? setExpandedFor(null) : expand());
+  const reduceMotion = useReducedMotion();
+
+  // [키보드 — 디자인 진단 10-22 필수] 카드가 열려도 포커스를 억지로 옮기지 않는다. Esc 는 닫기와
+  // 같고, 닫히면 카드를 연 요소(목록 항목 등 — 지도 핀은 포커스를 받을 수 없다)로 포커스를 돌려준다.
+  const openerRef = useRef<HTMLElement | null>(null);
+  const placeId = place?.placeId ?? null;
+  useEffect(() => {
+    if (!placeId) return;
+    if (!openerRef.current) {
+      const active = document.activeElement;
+      openerRef.current = active instanceof HTMLElement && active !== document.body ? active : null;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [placeId, onClose]);
+  useEffect(() => {
+    if (placeId) return;
+    const opener = openerRef.current;
+    openerRef.current = null;
+    if (opener?.isConnected) opener.focus({ preventScroll: true });
+  }, [placeId]);
 
   function handleDragEnd(_: unknown, info: PanInfo) {
     if (!cardMode) {
@@ -104,13 +128,13 @@ export default function PlaceDetailSheet({
             // 둥근 카드. 휴대폰 가로(cardMode 아님)는 예전 바닥 시트 그대로.
             className={
               cardMode
-                ? "gpu absolute inset-x-2.5 bottom-[max(14px,env(safe-area-inset-bottom))] z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-[30px] bg-[var(--card-bezel)] p-1.5 shadow-[var(--card-shadow)]"
+                ? "gpu absolute inset-x-2.5 bottom-[max(14px,calc(env(safe-area-inset-bottom)+6px))] z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-[30px] bg-[var(--card-bezel)] p-1.5 shadow-[var(--card-shadow)]"
                 : "gpu absolute inset-x-0 bottom-0 z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-t-[20px] bg-white shadow-[0_-20px_50px_-10px_rgba(0,0,0,0.12)]"
             }
             initial={{ y: "105%" }}
             animate={{ y: 0 }}
             exit={{ y: "105%" }}
-            transition={{ type: "spring", damping: 30, stiffness: 300 }}
+            transition={reduceMotion ? { duration: 0 } : { type: "spring", damping: 30, stiffness: 300 }}
             drag="y"
             dragListener={false}
             dragControls={dragControls}
@@ -120,7 +144,7 @@ export default function PlaceDetailSheet({
           >
             {/* 카드 하한 20dvh: 768 세로에서 내용 높이만으론 19%였다(디자인 진단 10-21 승인 조건). */}
             <div
-              className={`flex min-h-0 flex-1 flex-col ${cardMode ? "rounded-[24px] bg-white" : ""} ${cardMode && !expanded ? "min-h-[20dvh]" : ""}`}
+              className={`flex min-h-0 flex-1 flex-col ${cardMode ? "rounded-[24px] bg-white ring-1 ring-[var(--card-hairline)]" : ""} ${cardMode && !expanded ? "min-h-[20dvh]" : ""}`}
             >
             <div className="relative flex-shrink-0" style={{ minHeight: 32 }}>
               {/* 보이는 막대는 5px 이지만 손가락 닿는 영역은 리스트 시트와 같은 44px 로 넓힌다.
@@ -136,7 +160,7 @@ export default function PlaceDetailSheet({
                   "aria-expanded": expanded,
                 })}
               >
-                <div className="h-[5px] w-9 cursor-grab rounded-full bg-[#DADDEF] active:cursor-grabbing" />
+                <div className="h-[5px] w-9 cursor-grab rounded-full bg-[var(--card-handle)] active:cursor-grabbing" />
               </div>
               <button
                 onClick={onClose}
@@ -157,6 +181,7 @@ export default function PlaceDetailSheet({
                 region={region}
                 compact={!expanded}
                 onExpand={expand}
+                onCollapse={cardMode ? () => setExpandedFor(null) : undefined}
                 look={cardMode ? "float" : undefined}
               />
             </div>
