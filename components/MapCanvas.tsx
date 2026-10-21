@@ -1196,7 +1196,9 @@ export default function MapCanvas({
 
     if (focusCoords) {
       const loc = new kakao.maps.LatLng(focusCoords.lat, focusCoords.lng);
-      map.panTo(loc);
+      // 이동은 아래 갈래에서 레벨과 함께 한 번에 한다. 예전처럼 여기서 panTo 하고 아래에서
+      // setLevel(animate) 하면 레벨이 바뀌는 순간 panTo 가 씹혀 지도가 내 위치로 안 갔다
+      // (2026-10-21 라이브 실측: 8→5 에서 중심이 그대로). "현위치가 안 잡힌다"의 한 원인.
       /*
        * [정확도에 맞춰 확대한다]
        * 예전에는 오차와 무관하게 항상 level 6 으로 바짝 당겼다. 브라우저가 Wi-Fi 로 3km
@@ -1229,7 +1231,7 @@ export default function MapCanvas({
       } else {
         // 검색이 아니라 "현재 위치만 보기"다. 훑은 범위가 없으니 오차만큼만 당긴다.
         const level = acc === null ? 6 : acc <= 200 ? 5 : acc <= 1000 ? 6 : acc <= 5000 ? 7 : 8;
-        map.setLevel(level, { animate: true });
+        map.jump(loc, level, { animate: true });
       }
 
       // 훑은 범위를 눈에 보이게 그린다. 목록에 있는데 화면 밖인 곳이 왜 나왔는지 설명해 준다.
@@ -1288,8 +1290,8 @@ export default function MapCanvas({
     }
     if (places.length === 0) return;
     const first = places[0];
-    map.setLevel(9, { animate: true });
-    map.panTo(new kakao.maps.LatLng(first.coordinates[1], first.coordinates[0]));
+    // setLevel(animate)+panTo 는 레벨이 바뀌면 이동이 씹힌다 — 한 번에 바꾸는 jump 로.
+    map.jump(new kakao.maps.LatLng(first.coordinates[1], first.coordinates[0]), 9, { animate: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusTrigger]);
 
@@ -1462,8 +1464,15 @@ export default function MapCanvas({
         map.setCenter(prevCenter);
       }
     }
-    map.setLevel(4, { animate: true });
-    map.panTo(target);
+    /*
+     * [레벨이 바뀌면 이동이 씹히던 문제 — 2026-10-21 라이브 실측]
+     * setLevel(4,{animate:true}) 바로 뒤에 panTo 를 부르면, 레벨이 실제로 바뀌는 경우(6→4,
+     * 8→4 등) 확대 애니메이션이 panTo 를 덮어써 지도가 원래 자리에 그대로 남았다 — 고른 핀이
+     * 화면 밖이나 시트 뒤에 있는 채로 끝났다(768폭에서 핀 y=-50). 이미 레벨 4였을 때만 우연히
+     * 맞았다. 카카오 jump 는 중심과 레벨을 한 번의 애니메이션으로 바꾼다(라이브에서 6·8→4 모두
+     * 목표 좌표에 오차 0.0001° 이내로 도착 확인).
+     */
+    map.jump(target, 4, { animate: true });
   }, [selectedPlaceId, places]);
 
   return (
