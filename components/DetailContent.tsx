@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import type { Place, Region } from "@/lib/types";
 import { SUB_DEFS } from "@/lib/types";
-import { CategoryIcon, GROUP_COLOR, InfoIcon } from "@/lib/icons";
+import { CategoryIcon, GROUP_COLOR, InfoIcon, PIN_ACCENT_COLOR } from "@/lib/icons";
 import { fetchNaverHomepage, fetchTourIntro, kakaoDirLink } from "@/lib/api";
 import { kakaoPlaceLink } from "@/lib/shareLink";
 import ShareButton from "./ShareButton";
@@ -96,17 +96,26 @@ function formatBusinessCategory(raw: string | null | undefined): string | null {
  * compact: 모바일에서 핀을 고른 직후의 작은 카드. 업종·이름·주소·바로 쓰는 버튼만 남기고
  * 정보 줄과 하단 CTA는 펼쳤을 때만 보인다(2026-10-21 대표 "바텀이 시야를 가린다" — 상세
  * 시트가 처음부터 화면 절반 넘게 올라와 지도를 덮었다).
+ *
+ * look="float": 모바일 장소 카드의 B안(2026-10-22 대표 선택 — 딥블루로 띄운 카드, 둥근
+ * 모서리). 업종 타일+이름 머리, 길찾기 알약 하나만 채우고 나머지는 둥근 아이콘 버튼.
+ * 색은 globals.css 의 --card-* 한 곳에서만 온다. 데스크톱 사이드바는 look 없이 그대로.
  */
+const FLOAT_ROUND_BTN =
+  "inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--card-soft)] text-[var(--card-primary)] transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100";
+
 export default function DetailContent({
   place,
   region,
   compact = false,
   onExpand,
+  look,
 }: {
   place: Place;
   region: Region;
   compact?: boolean;
   onExpand?: () => void;
+  look?: "float";
 }) {
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const leadFormLive = Date.now() >= LEAD_FORM_LIVE_AT;
@@ -128,20 +137,51 @@ export default function DetailContent({
   });
 
   const subDef = SUB_DEFS[place.categoryDepth1]?.find((s) => s.id === place.categoryDepth2);
+  const float = look === "float";
+  const homepageUrl = place.homepageDirect || naverHomepage.data;
 
   return (
     <div>
-      <span className="tp-caption mb-2 inline-flex items-center gap-1.5 rounded-lg bg-[rgba(6,16,125,0.08)] px-3 py-1 text-[var(--color-deep-blue)]">
-        <CategoryIcon
-          group={place.categoryDepth1}
-          sub={place.categoryDepth2}
-          size={14}
-          color={GROUP_COLOR[place.categoryDepth1]}
-        />
-        {place.categoryDepth2 && subDef?.label}
-      </span>
-      <h3 className="tp-title mb-1 break-words text-[#0A0A23]">{place.placeName}</h3>
-      <p className={`tp-body mb-2.5 break-words text-[#5A5A78] ${compact ? "line-clamp-1" : ""}`}>{place.address}</p>
+      {float ? (
+        <>
+          {/* 오른쪽 48px 은 시트의 닫기 버튼 자리라 비워 둔다. */}
+          <div className="flex items-center gap-3 pr-11">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[var(--card-primary)]">
+              <CategoryIcon
+                group={place.categoryDepth1}
+                sub={place.categoryDepth2}
+                size={24}
+                color={PIN_ACCENT_COLOR[place.categoryDepth1]}
+              />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="truncate text-[12.5px] font-semibold text-[var(--card-meta)]">
+                {subDef?.label ?? ""}
+              </span>
+              <h3 className="truncate text-[20px] font-extrabold leading-snug tracking-[-0.03em] text-[var(--card-title)]">
+                {place.placeName}
+              </h3>
+            </div>
+          </div>
+          <p className={`mt-2.5 break-words text-[14px] leading-snug tracking-[-0.01em] text-[var(--card-sub)] ${compact ? "line-clamp-2" : "mb-2.5"}`}>
+            {place.address}
+          </p>
+        </>
+      ) : (
+        <>
+          <span className="tp-caption mb-2 inline-flex items-center gap-1.5 rounded-lg bg-[rgba(6,16,125,0.08)] px-3 py-1 text-[var(--color-deep-blue)]">
+            <CategoryIcon
+              group={place.categoryDepth1}
+              sub={place.categoryDepth2}
+              size={14}
+              color={GROUP_COLOR[place.categoryDepth1]}
+            />
+            {place.categoryDepth2 && subDef?.label}
+          </span>
+          <h3 className="tp-title mb-1 break-words text-[#0A0A23]">{place.placeName}</h3>
+          <p className={`tp-body mb-2.5 break-words text-[#5A5A78] ${compact ? "line-clamp-1" : ""}`}>{place.address}</p>
+        </>
+      )}
 
       {compact ? null : place.source === "registry" ? (
         /* [대장 출처] 한국수목원정원관리원이 직접 관리하는 값이라 외부에 다시 물어볼 필요가 없다.
@@ -244,6 +284,62 @@ export default function DetailContent({
         </div>
       )}
 
+      {float ? (
+        <div className="mt-3.5 flex items-center gap-2">
+          <a
+            className="group flex h-[52px] min-w-0 flex-1 items-center justify-between rounded-full bg-[var(--card-primary)] py-0 pl-5 pr-1.5 text-[15px] font-bold text-[var(--card-on-primary)] transition-[transform,background-color] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.98] active:bg-[var(--card-primary-pressed)] motion-reduce:transition-none max-[360px]:pl-4"
+            href={kakaoDirLink(place.placeName, place.coordinates[1], place.coordinates[0])}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            길찾기
+            {/* 폭 360 이하에선 화살표 원을 빼 둥근 버튼 셋과 한 줄에 들어가게 한다. */}
+            <span aria-hidden className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--card-arrow-bg)] transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-0.5 motion-reduce:transition-none max-[360px]:hidden">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14" />
+                <path d="M13 6l6 6-6 6" />
+              </svg>
+            </span>
+          </a>
+          {homepageUrl && (
+            <a className={FLOAT_ROUND_BTN} href={homepageUrl} target="_blank" rel="noopener noreferrer" aria-label="홈페이지 열기">
+              <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18" />
+                <path d="M12 3a14 14 0 0 1 0 18" />
+                <path d="M12 3a14 14 0 0 0 0 18" />
+              </svg>
+            </a>
+          )}
+          {!compact && place.homepage && (
+            <a className={FLOAT_ROUND_BTN} href={place.homepage} target="_blank" rel="noopener noreferrer" aria-label="카카오맵에서 보기">
+              <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 21s-6.5-6.2-6.5-11.2A6.5 6.5 0 0 1 18.5 9.8C18.5 14.8 12 21 12 21z" />
+                <circle cx="12" cy="9.8" r="2.4" />
+              </svg>
+            </a>
+          )}
+          <ShareButton
+            className={FLOAT_ROUND_BTN}
+            title={place.placeName}
+            text={place.address}
+            url={kakaoPlaceLink(place.placeName, place.coordinates[1], place.coordinates[0])}
+          >
+            <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 15V4" />
+              <path d="M8 8l4-4 4 4" />
+              <path d="M5 13v6h14v-6" />
+            </svg>
+          </ShareButton>
+          {compact && onExpand && (
+            <button onClick={onExpand} aria-expanded={false} aria-label="자세히 보기" className={FLOAT_ROUND_BTN}>
+              <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
+        </div>
+      ) : (
       <div className="mt-3.5 flex flex-wrap gap-2">
         <a
           className="tp-caption inline-flex min-h-[44px] items-center rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] bg-[var(--color-deep-blue)] px-4 py-2.5 text-white"
@@ -296,6 +392,7 @@ export default function DetailContent({
           </button>
         )}
       </div>
+      )}
 
       {/* [Sticky CTA] 네온 옐로우 배경 + 딥 블루 텍스트, 탭 시 scale 0.95 햅틱 애니메이션.
           [잠정 링크 — 2026-09-19] mg-biz 리드 폼(LEAD_FORM_LIVE_AT)이 뜨기 전까지는 리드

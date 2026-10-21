@@ -145,12 +145,15 @@ export default function BottomSheet({
    * 독립된 화면(페이지)처럼 보이게 한다. peek/half 로 돌아가면 다시 둥글어진다.
    */
   const sheetRadius = snap === "full" ? "rounded-t-none" : "rounded-t-[20px]";
+  // 떠 있는 장소 카드(B안)가 나와 있는 동안엔 목록 시트 몸통을 감춘다 — 카드 양옆·아래 틈으로
+  // 흰 시트가 비치면 "떠 있는" 카드가 아니라 바닥 시트처럼 보인다. 카드 위 위치 버튼만 남긴다.
+  const bodyHidden = coverPx != null;
 
   return (
     <motion.div
       // overflow-hidden 을 여기에 두지 않는다. floatingActions 는 시트 위쪽(bottom:100%)에
       // 놓이므로 여기서 자르면 통째로 사라진다. 둥근 모서리 클리핑은 아래 내용 상자가 맡는다.
-      className={`gpu absolute inset-x-0 bottom-0 z-[var(--z-bottom-sheet)] flex flex-col ${sheetRadius} bg-white shadow-[0_-16px_40px_-8px_rgba(0,0,0,0.10)] transition-[border-radius] duration-300`}
+      className={`gpu absolute inset-x-0 bottom-0 z-[var(--z-bottom-sheet)] flex flex-col ${sheetRadius} transition-[border-radius] duration-300 ${bodyHidden ? "pointer-events-none" : "bg-white shadow-[0_-16px_40px_-8px_rgba(0,0,0,0.10)]"}`}
       style={{ height: "100dvh", y }}
       drag="y"
       dragListener={false}
@@ -168,7 +171,7 @@ export default function BottomSheet({
       )}
 
       <motion.div
-        className={`flex flex-col overflow-hidden ${sheetRadius} transition-[border-radius] duration-300`}
+        className={`flex flex-col overflow-hidden ${sheetRadius} transition-[border-radius] duration-300 ${bodyHidden ? "invisible" : ""}`}
         style={{
           height: visibleH,
           // 홈 인디케이터가 있는 기기에서 목록 마지막 줄이 그 아래로 들어가지 않게 한다.

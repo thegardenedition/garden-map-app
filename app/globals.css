@@ -35,6 +35,20 @@
   --color-gray-3: #6E6E6E;
   --color-ink: #1C1F1E;
 
+  /* [모바일 장소 카드 — 2026-10-22 대표 선택 B안: 딥블루로 띄운 카드]
+     카드 색은 전부 여기서만 정한다. 11월 그린 통일(백로그 39) 때 이 블록만 바꾸면 된다. */
+  --card-primary: #06107D;              /* 길찾기 버튼·업종 타일 바탕 */
+  --card-primary-pressed: #040B5C;      /* 길찾기 눌림 */
+  --card-on-primary: #FFFFFF;
+  --card-arrow-bg: rgba(169, 176, 232, 0.28); /* 길찾기 안 화살표 원(muted, 네온 금지) */
+  --card-soft: #EEF0FF;                 /* 둥근 아이콘 버튼·닫기 원 */
+  --card-meta: #2734A5;                 /* 업종·지역 한 줄 */
+  --card-title: #0A0A23;
+  --card-sub: #5A5A78;                  /* 주소 */
+  --card-handle: #DADDEF;
+  --card-bezel: rgba(6, 16, 125, 0.08); /* 바깥 테 */
+  --card-shadow: 0 24px 60px -18px rgba(6, 16, 125, 0.35);
+
   /*
    * [지도 화면 z-index — 한 곳에서 관리, 2026-09-19]
    * 값 자체는 전부 이전과 동일하다(스택 순서 변경 없음) — 여러 파일(app/page.tsx,
