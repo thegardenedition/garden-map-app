@@ -52,9 +52,56 @@ const FLOAT_FADE_TRANSITION = { duration: 0.18 };
 
 // 실패 이유마다 할 수 있는 일이 다르다. 예전에는 무엇이든 "위치 권한을 확인해주세요" 였는데,
 // 실내에서 시간이 초과된 사람에게는 틀린 안내다.
+// [정밀 위치가 안 잡힐 때 한 번 더 — 2026-10-21] GEO_OPTS 는 GPS 를 켜고 10초를 기다린다.
+// 실내·아이폰에서는 그 안에 못 잡아 곧장 "시간 초과"로 끝나는 일이 잦았다(대표 "현위치가 잘
+// 안 잡힌다"). 권한 거부가 아닌 실패라면 Wi-Fi·기지국 기반의 덜 정밀한 위치로 한 번만 다시
+// 묻는다 — 반경 5km 검색에는 수백 m 오차여도 아무것도 안 보이는 것보다 낫다.
+const GEO_FALLBACK_OPTS: PositionOptions = {
+  enableHighAccuracy: false,
+  timeout: 6000,
+  maximumAge: 120000,
+};
+
+function getPositionWithFallback(
+  onOk: (pos: GeolocationPosition) => void,
+  onErr: (err: GeolocationPositionError) => void
+) {
+  navigator.geolocation.getCurrentPosition(
+    onOk,
+    (err) => {
+      if (err.code === err.PERMISSION_DENIED) return onErr(err);
+      navigator.geolocation.getCurrentPosition(onOk, onErr, GEO_FALLBACK_OPTS);
+    },
+    GEO_OPTS
+  );
+}
+
+// 권한 거부 안내는 다시 켜는 곳이 환경마다 달라서 나눈다. 카카오톡·네이버 등 앱 안 브라우저는
+// 위치를 아예 막는 경우가 많아 바깥 브라우저로 여는 길을 알려 준다.
+function permissionDeniedMessage(): string {
+  const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  if (/KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\//i.test(ua)) {
+    return "앱 안에서 연 화면이라 위치를 쓸 수 없습니다. 오른쪽 위 메뉴에서 「다른 브라우저로 열기」를 눌러 주세요.";
+  }
+  if (/iPhone|iPad|iPod/i.test(ua)) {
+    return "위치 권한이 꺼져 있습니다. 설정 > Safari > 위치에서 「허용」 또는 「묻기」로 바꿔 주세요.";
+  }
+  return "위치 권한이 꺼져 있습니다. 주소창의 자물쇠 아이콘에서 위치 권한을 허용해 주세요.";
+}
+
+// 위치를 찾는 동안 ◎ 자리에 도는 고리. 움직임 줄이기 설정에서는 돌지 않고 흐리게만 보인다.
+function LocatingSpinner() {
+  return (
+    <span
+      aria-hidden
+      className="h-5 w-5 rounded-full border-2 border-current border-t-transparent opacity-80 motion-safe:animate-spin"
+    />
+  );
+}
+
 function geoErrorMessage(err: GeolocationPositionError): string {
   if (err.code === err.PERMISSION_DENIED) {
-    return "위치 권한이 꺼져 있습니다. 주소창의 자물쇠 아이콘에서 위치 권한을 허용해 주세요.";
+    return permissionDeniedMessage();
   }
   if (err.code === err.TIMEOUT) {
     return "위치를 잡는 데 시간이 오래 걸립니다. 실내라면 창가로 옮기거나 잠시 후 다시 시도해 주세요.";
@@ -284,7 +331,7 @@ export default function Page() {
       return;
     }
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
+    getPositionWithFallback(
       (pos) => {
         setLocating(false);
         setSubmittedTerm("");
@@ -298,23 +345,27 @@ export default function Page() {
       (err) => {
         setLocating(false);
         alert(geoErrorMessage(err));
-      },
-      GEO_OPTS
+      }
     );
   }
 
   function handleLocateOnly() {
     if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
+    // 예전엔 찾는 동안(최대 10초) 버튼에 아무 변화가 없어 눌린 건지조차 알 수 없었다.
+    setLocating(true);
+    getPositionWithFallback(
       (pos) => {
+        setLocating(false);
         setLocateAccuracy(pos.coords.accuracy ?? null);
         setLocateCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setFocusTrigger((t) => t + 1);
       },
       // 예전에는 실패 콜백이 아예 없어서, 권한이 꺼져 있으면 버튼을 눌러도 아무 일도
       // 일어나지 않았다. 사용자는 버튼이 고장난 줄 안다.
-      (err) => alert(geoErrorMessage(err)),
-      GEO_OPTS
+      (err) => {
+        setLocating(false);
+        alert(geoErrorMessage(err));
+      }
     );
   }
 
@@ -457,10 +508,12 @@ export default function Page() {
           </AnimatePresence>
           <button
             onClick={handleLocateOnly}
-            aria-label="현재 위치"
+            disabled={locating}
+            aria-busy={locating}
+            aria-label={locating ? "현재 위치 찾는 중" : "현재 위치"}
             className="absolute bottom-6 right-6 z-[var(--z-desktop-float-actions)] flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)] shadow-[0_8px_20px_-6px_rgba(0,0,0,0.15)]"
           >
-            ◎
+            {locating ? <LocatingSpinner /> : "◎"}
           </button>
         </div>
       </div>
@@ -613,10 +666,12 @@ export default function Page() {
             </button>
             <button
               onClick={handleLocateOnly}
-              aria-label="현재 위치"
+              disabled={locating}
+              aria-busy={locating}
+              aria-label={locating ? "현재 위치 찾는 중" : "현재 위치"}
               className="flex h-12 w-12 items-center justify-center border-t border-white/15 bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)]"
             >
-              ◎
+              {locating ? <LocatingSpinner /> : "◎"}
             </button>
           </div>
         }
