@@ -63,6 +63,11 @@ export default function BottomSheet({
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  // 카드 위에 붙은 버튼 묶음(48px 두 개 + 위 여백 18px)이 상단 검색 묶음과 겹칠 만큼 자리가
+  // 없으면(가로 화면 등) 카드가 떠 있는 동안만 숨긴다 — 카드를 닫으면 다시 나온다.
+  const FAB_STACK_PX = 96 + 18;
+  const fabCrowded = coverPx != null && vh - coverPx - FAB_STACK_PX < minTopPx;
+
   useEffect(() => {
     const target = coverPx != null ? Math.max(vh - coverPx, minTopPx) : pxFor(snap, vh, minTopPx);
     const controls = animate(y, target, { type: "spring", damping: 32, stiffness: 300 });
@@ -154,7 +159,7 @@ export default function BottomSheet({
       dragElastic={0.15}
       onDragEnd={handleDragEnd}
     >
-      {floatingActions && (
+      {floatingActions && !fabCrowded && (
         // 버튼 사이 간격으로는 지도를 만질 수 있게 한다(상단 스택과 같은 이유).
         // 껍데기만 터치를 흘려보내고, 버튼 각각이 pointer-events-auto 를 갖는다.
         <div className="pointer-events-none absolute bottom-full right-3.5 mb-[18px] flex flex-col gap-2.5">
