@@ -96,7 +96,8 @@ export default function PlaceDetailSheet({
             ref={sheetRef}
             data-gm-detail-sheet
             // 카드 하한 20dvh: 768 세로에서 내용 높이만으론 19%였다(디자인 진단 10-21 승인 조건).
-            className={`gpu absolute inset-x-0 bottom-0 z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-t-[20px] bg-white shadow-[0_-20px_50px_-10px_rgba(0,0,0,0.12)] ${expanded ? "" : "min-h-[20dvh]"}`}
+            // 윗경계: 지도 배경이 복잡해 그림자만으론 약하다 — 1px 선 + 옅은 넓은 그림자(디자인 진단 10-22).
+            className={`gpu absolute inset-x-0 bottom-0 z-[var(--z-modal-sheet)] flex max-h-[70dvh] flex-col rounded-t-[16px] border-t border-[#D6D6CF] bg-white shadow-[0_-12px_40px_rgba(7,59,49,0.08)] ${expanded ? "" : "min-h-[20dvh]"}`}
             initial={{ y: "105%" }}
             animate={{ y: 0 }}
             exit={{ y: "105%" }}
@@ -110,8 +111,9 @@ export default function PlaceDetailSheet({
           >
             <div className="relative flex-shrink-0" style={{ minHeight: 32 }}>
               {/* 보이는 막대는 5px 이지만 손가락 닿는 영역은 리스트 시트와 같은 44px 로 넓힌다. */}
+              {/* 손잡이 터치 영역은 오른쪽 닫기(44px)와 겹치지 않게 양옆을 56px씩 비운다. */}
               <div
-                className="flex items-center justify-center"
+                className="mx-14 flex items-center justify-center"
                 style={{ touchAction: "none", minHeight: 44 }}
                 onPointerDown={(e) => dragControls.start(e)}
                 {...(cardMode && {
@@ -121,21 +123,20 @@ export default function PlaceDetailSheet({
                   "aria-expanded": expanded,
                 })}
               >
-                <div className="h-[5px] w-9 cursor-grab rounded-full bg-[#DADDEF] active:cursor-grabbing" />
+                <div className="h-1 w-9 cursor-grab rounded bg-[#D6D6CF] active:cursor-grabbing" />
               </div>
               <button
                 onClick={onClose}
                 aria-label="닫기"
-                // 보이는 동그라미는 28px 그대로, 누르는 영역만 44px 로 넓힌다.
-                className="absolute right-1.5 top-0 flex h-11 w-11 items-center justify-center"
+                className="absolute right-1.5 top-0 flex h-11 w-11 items-center justify-center text-[#6E6E6E]"
               >
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#EEF0FF] text-[13px] text-[var(--color-deep-blue)]">
-                  ✕
-                </span>
+                <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M7 7l10 10M17 7L7 17" />
+                </svg>
               </button>
             </div>
             <div className={`overflow-y-auto px-5 ${expanded ? "pb-6" : "pb-[max(16px,env(safe-area-inset-bottom))]"}`}>
-              <DetailContent place={place} region={region} compact={!expanded} onExpand={expand} />
+              <DetailContent place={place} region={region} compact={!expanded} onExpand={expand} look="sheet" />
             </div>
           </motion.div>
         </>

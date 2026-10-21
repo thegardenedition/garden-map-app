@@ -17,6 +17,7 @@ export default function ShareButton({
   title,
   text,
   url,
+  className,
 }: {
   /** 공유 카드 제목 (장소명) */
   title: string;
@@ -24,6 +25,8 @@ export default function ShareButton({
   text?: string;
   /** 공유할 링크 */
   url: string;
+  /** 모양만 바꿀 때(모바일 장소 카드). 없으면 기존 딥블루 선 버튼. */
+  className?: string;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -50,7 +53,10 @@ export default function ShareButton({
       type="button"
       onClick={handleShare}
       aria-label="공유하기"
-      className="tp-caption inline-flex min-h-[44px] items-center rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] px-4 py-2.5 text-[var(--color-deep-blue)]"
+      className={
+        className ??
+        "tp-caption inline-flex min-h-[44px] items-center rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] px-4 py-2.5 text-[var(--color-deep-blue)]"
+      }
     >
       {copied ? "링크 복사됨" : "공유하기"}
     </button>

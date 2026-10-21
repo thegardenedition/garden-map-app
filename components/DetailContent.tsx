@@ -96,17 +96,26 @@ function formatBusinessCategory(raw: string | null | undefined): string | null {
  * compact: 모바일에서 핀을 고른 직후의 작은 카드. 업종·이름·주소·바로 쓰는 버튼만 남기고
  * 정보 줄과 하단 CTA는 펼쳤을 때만 보인다(2026-10-21 대표 "바텀이 시야를 가린다" — 상세
  * 시트가 처음부터 화면 절반 넘게 올라와 지도를 덮었다).
+ *
+ * look="sheet": 모바일 장소 시트의 새 모양(2026-10-22 A안 — 대표 "투박하다", 디자인 진단
+ * 토큰 승인). 그린 토큰, 길찾기 하나만 채우고 나머지는 1px 선 버튼으로 낮춰 위계를 세운다.
+ * 데스크톱 사이드바는 look 없이 기존 딥블루 모양 그대로 둔다(11-09 통합 때 함께 정리).
  */
+const SHEET_SECONDARY_BTN =
+  "inline-flex h-11 shrink-0 items-center rounded-lg border border-[#D6D6CF] bg-white px-3.5 text-[14px] font-semibold text-[#121212] transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100";
+
 export default function DetailContent({
   place,
   region,
   compact = false,
   onExpand,
+  look,
 }: {
   place: Place;
   region: Region;
   compact?: boolean;
   onExpand?: () => void;
+  look?: "sheet";
 }) {
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const leadFormLive = Date.now() >= LEAD_FORM_LIVE_AT;
@@ -128,10 +137,17 @@ export default function DetailContent({
   });
 
   const subDef = SUB_DEFS[place.categoryDepth1]?.find((s) => s.id === place.categoryDepth2);
+  const sheet = look === "sheet";
 
   return (
     <div>
-      <span className="tp-caption mb-2 inline-flex items-center gap-1.5 rounded-lg bg-[rgba(6,16,125,0.08)] px-3 py-1 text-[var(--color-deep-blue)]">
+      <span
+        className={
+          sheet
+            ? "inline-flex h-[26px] items-center gap-1.5 rounded-lg bg-[#EEF5F2] pl-2 pr-2.5 text-[12.5px] font-semibold text-[#0B5345]"
+            : "tp-caption mb-2 inline-flex items-center gap-1.5 rounded-lg bg-[rgba(6,16,125,0.08)] px-3 py-1 text-[var(--color-deep-blue)]"
+        }
+      >
         <CategoryIcon
           group={place.categoryDepth1}
           sub={place.categoryDepth2}
@@ -140,8 +156,22 @@ export default function DetailContent({
         />
         {place.categoryDepth2 && subDef?.label}
       </span>
-      <h3 className="tp-title mb-1 break-words text-[#0A0A23]">{place.placeName}</h3>
-      <p className={`tp-body mb-2.5 break-words text-[#5A5A78] ${compact ? "line-clamp-1" : ""}`}>{place.address}</p>
+      {sheet ? (
+        <>
+          {/* 간격 12/6/16(디자인 진단): 칩 → 이름 24/800 → 주소 15/400 회색, 주소는 호수가 잘리지 않게 최대 2줄 */}
+          <h3 className="mt-3 break-words text-[24px] font-extrabold leading-tight tracking-[-0.02em] text-[#121212]">
+            {place.placeName}
+          </h3>
+          <p className={`mt-1.5 break-words text-[15px] leading-snug tracking-[-0.01em] text-[#6E6E6E] ${compact ? "line-clamp-2" : "mb-2.5"}`}>
+            {place.address}
+          </p>
+        </>
+      ) : (
+        <>
+          <h3 className="tp-title mb-1 break-words text-[#0A0A23]">{place.placeName}</h3>
+          <p className={`tp-body mb-2.5 break-words text-[#5A5A78] ${compact ? "line-clamp-1" : ""}`}>{place.address}</p>
+        </>
+      )}
 
       {compact ? null : place.source === "registry" ? (
         /* [대장 출처] 한국수목원정원관리원이 직접 관리하는 값이라 외부에 다시 물어볼 필요가 없다.
@@ -244,6 +274,49 @@ export default function DetailContent({
         </div>
       )}
 
+      {sheet ? (
+        <div className={`mt-4 flex gap-2 ${compact ? "" : "flex-wrap"}`}>
+          <a
+            className={`inline-flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-lg bg-[#0B5345] px-4 text-[14px] font-bold text-white transition-[transform,background-color] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.97] active:bg-[#073B31] motion-reduce:transition-none max-[360px]:px-3 ${compact ? "flex-1" : ""}`}
+            href={kakaoDirLink(place.placeName, place.coordinates[1], place.coordinates[0])}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {/* 폭 360 이하(작은 안드로이드)에선 아이콘을 빼야 버튼 넷이 한 줄에 들어간다. */}
+            <svg aria-hidden className="max-[360px]:hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2.8l9.2 9.2-9.2 9.2L2.8 12z" />
+              <path d="M9 15v-3.5h6" />
+              <path d="M12.5 9l2.5 2.5-2.5 2.5" />
+            </svg>
+            길찾기
+          </a>
+          {(place.homepageDirect || naverHomepage.data) && (
+            <a className={SHEET_SECONDARY_BTN} href={place.homepageDirect || naverHomepage.data!} target="_blank" rel="noopener noreferrer">
+              홈페이지
+            </a>
+          )}
+          {/* 카드 상태에선 버튼 넷까지만 — 카카오맵 링크는 펼친 상세에서. */}
+          {!compact && place.homepage && (
+            <a className={SHEET_SECONDARY_BTN} href={place.homepage} target="_blank" rel="noopener noreferrer">
+              카카오맵에서 보기
+            </a>
+          )}
+          <ShareButton
+            className={SHEET_SECONDARY_BTN}
+            title={place.placeName}
+            text={place.address}
+            url={kakaoPlaceLink(place.placeName, place.coordinates[1], place.coordinates[0])}
+          />
+          {compact && onExpand && (
+            <button onClick={onExpand} aria-expanded={false} className={`${SHEET_SECONDARY_BTN} gap-0.5 pr-3`}>
+              자세히
+              <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
+        </div>
+      ) : (
       <div className="mt-3.5 flex flex-wrap gap-2">
         <a
           className="tp-caption inline-flex min-h-[44px] items-center rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] bg-[var(--color-deep-blue)] px-4 py-2.5 text-white"
@@ -296,6 +369,7 @@ export default function DetailContent({
           </button>
         )}
       </div>
+      )}
 
       {/* [Sticky CTA] 네온 옐로우 배경 + 딥 블루 텍스트, 탭 시 scale 0.95 햅틱 애니메이션.
           [잠정 링크 — 2026-09-19] mg-biz 리드 폼(LEAD_FORM_LIVE_AT)이 뜨기 전까지는 리드
