@@ -20,6 +20,15 @@ import LeadModal from "./LeadModal";
  */
 const LEAD_FORM_LIVE_AT = new Date("2026-09-23T00:00:00+09:00").getTime();
 
+/*
+ * [문의 입구 스위치 — 2026-10-21 대표 지시]
+ * "정원지도에서 전문가 견적 연결은 후순위. 대표가 오픈하라고 하면 오픈한다." 지도 앱의 유일한
+ * 문의 입구(아래 「정원전문가 찾기」 버튼 → LeadModal / 채널그린 목록 링크)를 지우지 않고 숨긴다.
+ * 다시 열 때는 Vercel 환경변수 NEXT_PUBLIC_LEAD_ENTRY_OPEN=1 을 넣고 재배포하거나, 이 줄의
+ * 기본값을 바꾼다. 폼·mg-biz 워커는 그대로다.
+ */
+const LEAD_ENTRY_OPEN = process.env.NEXT_PUBLIC_LEAD_ENTRY_OPEN === "1";
+
 // [href를 주면 값 자체가 하이퍼링크가 된다 — 2026-09-10]
 // 홈페이지 URL을 여기 텍스트로만 보여줬더니 링크처럼 보이는데 눌러도 아무 반응이 없었다
 // (실제 이동은 아래 별도 "홈페이지" 버튼에서만 됐다). value를 <a>로 바꿔 그 자리에서 바로
@@ -292,8 +301,9 @@ export default function DetailContent({
           [잠정 링크 — 2026-09-19] mg-biz 리드 폼(LEAD_FORM_LIVE_AT)이 뜨기 전까지는 리드
           모달 대신 채널그린 정원작가 리스트로 바로 보낸다. 개인정보를 우리 쪽에서 받는 게
           아니라 외부 링크일 뿐이라 리드 폼의 방침 개정 게이트와는 무관하다. 폼이 열리면
-          원래 문구·동작으로 자동 전환된다(별도 배포 불필요). 작은 카드(compact)에서는 숨긴다. */}
-      {compact ? null : leadFormLive ? (
+          원래 문구·동작으로 자동 전환된다(별도 배포 불필요). 작은 카드(compact)에서는 숨긴다.
+          LEAD_ENTRY_OPEN 이 꺼져 있으면(기본) 어디에서도 보이지 않는다. */}
+      {compact || !LEAD_ENTRY_OPEN ? null : leadFormLive ? (
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => setLeadModalOpen(true)}
@@ -313,7 +323,7 @@ export default function DetailContent({
         </motion.a>
       )}
 
-      {leadFormLive && leadModalOpen && <LeadModal place={place} onClose={() => setLeadModalOpen(false)} />}
+      {LEAD_ENTRY_OPEN && leadFormLive && leadModalOpen && <LeadModal place={place} onClose={() => setLeadModalOpen(false)} />}
     </div>
   );
 }
