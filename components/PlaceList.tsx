@@ -18,9 +18,9 @@ function LoadingRows() {
       <p className="sr-only">목록을 불러오는 중입니다</p>
       {[0, 1, 2, 3].map((i) => (
         <div key={i} aria-hidden="true" className="flex flex-col justify-center gap-2 border-b border-[#F0F1FC] px-[18px]" style={{ height: ROW_HEIGHT }}>
-          <div className="h-3 w-16 rounded-lg bg-[#EEF0FA] motion-safe:animate-pulse" />
-          <div className="h-4 w-2/3 rounded bg-[#EEF0FA] motion-safe:animate-pulse" />
-          <div className="h-3 w-4/5 rounded bg-[#F3F4FC] motion-safe:animate-pulse" />
+          <div className="h-3 w-16 rounded-lg bg-[#E3E3EE] motion-safe:animate-pulse" />
+          <div className="h-4 w-2/3 rounded bg-[#E3E3EE] motion-safe:animate-pulse" />
+          <div className="h-3 w-4/5 rounded bg-[#EBEBF3] motion-safe:animate-pulse" />
         </div>
       ))}
     </div>
@@ -58,15 +58,16 @@ export default function PlaceList({
   if (isError && places.length === 0) {
     return (
       <div role="alert" className="flex flex-1 flex-col items-center justify-center gap-3 px-8 py-10 text-center">
-        <p className="tp-body font-bold text-[#3A3A55]">목록을 불러오지 못했어요</p>
-        <p className="tp-caption font-normal text-[#9AA0C4]">
+        {/* tp-body 가 글자 굵기 400 을 레이어 밖에서 지정해 font-bold 가 덮이던 것을 !로 이긴다(디자인 검토 10-21) */}
+        <p className="tp-body !font-bold text-[#1A1A3A]">목록을 불러오지 못했어요</p>
+        <p className="tp-caption break-keep !font-normal text-[#5B5B78]">
           네트워크가 불안정하거나 서버가 잠시 응답하지 않아요. 잠시 뒤에 다시 시도해 주세요.
         </p>
         {onRetry && (
           <button
             type="button"
             onClick={onRetry}
-            className="mt-1 h-11 rounded-full bg-[#0B5345] px-6 text-[14px] font-bold text-white transition-opacity duration-150 active:opacity-80"
+            className="mt-1 h-11 rounded-full bg-[#0B5345] px-6 text-[14px] font-bold text-white transition-opacity duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0B5345] active:opacity-80"
           >
             다시 시도
           </button>
@@ -85,7 +86,7 @@ export default function PlaceList({
   return (
     <>
     {notice && (
-      <div role="status" className="flex-shrink-0 bg-[#EEF5F2] px-[18px] py-2.5 text-[12.5px] leading-[1.5] text-[#0B5345]">
+      <div role="status" className="flex-shrink-0 break-keep bg-[#EEF5F2] px-[18px] py-2.5 text-[12.5px] leading-[1.5] text-[#0B5345]">
         {notice}
       </div>
     )}
