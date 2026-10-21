@@ -170,9 +170,30 @@ const CLUSTER_BG = [
   "radial-gradient(circle at 35% 30%, rgba(36,48,180,.98), rgba(6,16,125,.97) 72%)",
 ];
 
+/*
+ * [작은 묶음 원의 누르는 영역 44px — 2026-10-21 디자인 진단 검토]
+ * 레벨 6~7에 「2」「3」 원이 새로 많이 생긴다(응급처치 ⑤). 보이는 원(34px)은 그대로 두고,
+ * 5px 투명 테두리로 손가락이 닿는 영역만 44px 로 넓힌다. 배경은 그 테두리 안쪽에만 칠하고
+ * (backgroundClip), 흰 테두리는 안쪽 그림자로, 떠 있는 느낌은 칠해진 부분만 따라가는
+ * drop-shadow 로 그린다 — box-shadow 는 투명 테두리 바깥에 그려져 원이 커 보이기 때문이다.
+ */
+const CLUSTER_STYLE_SMALL = {
+  width: "44px", height: "44px", lineHeight: "34px", fontSize: "12px",
+  background: CLUSTER_BG[0], backgroundClip: "padding-box", borderRadius: "50%", color: "#E1FC48",
+  textAlign: "center", fontWeight: "700", border: "5px solid transparent",
+  boxSizing: "border-box", boxShadow: "inset 0 0 0 2px #fff", filter: "drop-shadow(0 2px 4px rgba(0,0,0,.28))",
+} as const;
+
 // 카카오 MarkerClusterer의 styles 배열과 시각적으로 동일한 원 뱃지 DOM을 직접 만든다.
 function clusterBadgeElement(count: number): HTMLDivElement {
   const tier = clusterTier(count);
+  if (tier === 0) {
+    // 보이는 원은 34px 그대로, 누르는 영역만 투명 테두리로 44px 까지 넓힌다(위 CLUSTER_STYLE_SMALL, 카카오 묶음과 같은 모양).
+    const el = document.createElement("div");
+    el.textContent = String(count);
+    Object.assign(el.style, CLUSTER_STYLE_SMALL, { cursor: "pointer" });
+    return el;
+  }
   const size = [34, 46, 60][tier];
   const font = [12, 13, 15][tier];
   const border = [2, 3, 3][tier];
@@ -208,13 +229,25 @@ function clusterBadgeElement(count: number): HTMLDivElement {
  * 정보가 없는데 묶음과 같은 크기라 지도를 덮는 느낌만 키웠다. 한 곳뿐인 칸은 업종색 테두리를
  * 두른 작은 네이비 점으로 그리고, 누르면 묶음처럼 확대하지 않고 바로 그 장소를 연다.
  */
+// 점도 핀과 같은 모양 규칙(조경회사 네모·조경수/자재 원·공원 마름모)을 따른다 — 테두리 색 하나로는
+// 주황/초록(적록 색각 이상에서 가장 헷갈리는 조합)이 안 갈려서다. 보이는 점은 작지만 손가락으로
+// 누르는 영역은 투명한 44px 상자로 넓힌다(디자인 진단 검토 10-21).
 function singlePlaceDotElement(group: Place["categoryDepth1"]): HTMLDivElement {
-  const el = document.createElement("div");
+  const hit = document.createElement("div");
+  hit.style.cssText = "cursor:pointer;width:44px;height:44px;display:flex;align-items:center;justify-content:center;";
   const ring = PIN_ACCENT_COLOR[group] ?? PIN_ACCENT_COLOR.park;
-  el.style.cssText =
-    "cursor:pointer;width:13px;height:13px;border-radius:50%;box-sizing:border-box;" +
-    `background:#06107D;border:2.5px solid ${ring};box-shadow:0 0 0 1.5px #fff,0 1px 4px rgba(6,16,125,.35);`;
-  return el;
+  const shape =
+    group === "company"
+      ? "width:13px;height:13px;border-radius:2px;"
+      : group === "park"
+        ? "width:11px;height:11px;border-radius:1px;transform:rotate(45deg);"
+        : "width:13px;height:13px;border-radius:50%;";
+  const dot = document.createElement("div");
+  dot.style.cssText =
+    shape +
+    `box-sizing:border-box;background:#06107D;border:2.2px solid ${ring};box-shadow:0 0 0 1.6px #fff,0 1px 4px rgba(6,16,125,.35);`;
+  hit.appendChild(dot);
+  return hit;
 }
 
 interface ClusterBucket {
@@ -782,12 +815,7 @@ export default function MapCanvas({
           // 미만, 이 네이티브 클러스터러)과 합성 클러스터 화면(레벨 8 이상, 우리가 직접 그리는
           // clusterBadgeElement)이 레벨 경계를 오갈 때 뱃지가 다른 것으로 안 보이도록 맞춘다.
           styles: [
-            {
-              width: "34px", height: "34px", lineHeight: "34px", fontSize: "12px",
-              background: CLUSTER_BG[0], borderRadius: "50%", color: "#E1FC48",
-              textAlign: "center", fontWeight: "700", border: "2px solid #fff",
-              boxSizing: "border-box", boxShadow: "0 2px 8px rgba(0,0,0,.28)",
-            },
+            { ...CLUSTER_STYLE_SMALL },
             {
               width: "46px", height: "46px", lineHeight: "46px", fontSize: "13px",
               background: CLUSTER_BG[1], borderRadius: "50%", color: "#E1FC48",
