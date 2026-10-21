@@ -281,8 +281,8 @@ export default function DetailContent({
             className="tp-caption inline-flex min-h-[44px] items-center gap-1 rounded-2xl border-[1.5px] border-[#DADDEF] px-4 py-2.5 text-[var(--color-deep-blue)]"
           >
             자세히
-            <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <path d="M2.5 7.5 6 4l3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         )}
