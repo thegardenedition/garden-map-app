@@ -23,6 +23,7 @@ import {
 import { useIsDesktop } from "@/lib/useIsDesktop";
 import { SHOW_PROJECTS } from "@/lib/exposure";
 import { fetchNaverHomepage, fetchTourIntro, haversineMeters } from "@/lib/api";
+import { browseNotice, searchNotice } from "@/lib/truncation";
 import type { Place } from "@/lib/types";
 import { GROUP_LABEL } from "@/lib/types";
 
@@ -186,8 +187,8 @@ export default function Page() {
 
   const rawPlaces = useMemo(() => {
     if (isNearbyMode) return nearbyQuery.data?.places ?? [];
-    if (isBrowseMode) return browseQuery.data ?? [];
-    return [...(bizQuery.data ?? []), ...(parkQuery.data ?? [])];
+    if (isBrowseMode) return browseQuery.data?.places ?? [];
+    return [...(bizQuery.data?.places ?? []), ...(parkQuery.data ?? [])];
   }, [isNearbyMode, isBrowseMode, nearbyQuery.data, browseQuery.data, bizQuery.data, parkQuery.data]);
 
   // [체감 속도] 로딩 표시는 빠른 조경회사/자재 쿼리 기준으로만 판단한다. 공원 데이터는 뒤에서
@@ -198,11 +199,19 @@ export default function Page() {
   // 중..." 문구 전용이다. 이 둘을 하나로 합치면(예전 버전) 재검색 순간 목록이 이전 결과 대신
   // "검색어를 입력해주세요" 빈 안내문으로 바뀌어 버린다 — placeholderData로 막은 깜빡임이
   // 다른 모습으로 되돌아오는 것이다.
+  /*
+   * [isLoading 이 아니라 isPending - 2026-10-13]
+   * isLoading 은 「데이터가 없고 지금 요청이 날아가는 중」이다. 그런데 탭이 가려져 있거나 앱이 백그라운드로
+   * 가면 TanStack Query 는 재시도를 일시정지(fetchStatus: paused)하고, 그동안 isLoading 은 false 가 된다.
+   * 그러면 데이터도 없고 오류도 아닌 순간이 「이 지역에는 아직 등록된 공간이 없습니다」로 보였다.
+   * isPending 은 「아직 한 번도 데이터가 오지 않음」이라 일시정지 중에도 true 다. 이 화면의 쿼리는 모드별로
+   * 해당 모드에서 항상 켜져 있으므로(꺼진 채 pending 으로 남는 경우가 없다) 안전하다.
+   */
   const isLoading = isNearbyMode
-    ? nearbyQuery.isLoading
+    ? nearbyQuery.isPending
     : isBrowseMode
-    ? browseQuery.isLoading
-    : bizQuery.isLoading;
+    ? browseQuery.isPending
+    : bizQuery.isPending;
   /*
    * [재검색 중임을 알려야 한다]
    * 검색·내 주변 쿼리에 placeholderData를 넣은 뒤로 isLoading(=isPending && isFetching)은
@@ -216,7 +225,7 @@ export default function Page() {
   const isFetchingResults = isNearbyMode
     ? nearbyQuery.isFetching
     : isBrowseMode
-    ? browseQuery.isLoading
+    ? browseQuery.isPending
     : bizQuery.isFetching;
 
   const places: Place[] = useMemo(() => {
@@ -391,6 +400,25 @@ export default function Page() {
     ? "지도 탐색 · 지금 보이는 영역"
     : `지도 탐색 · ${region} 분포 (확대하면 전부 표시)`;
 
+  /*
+   * [실패·일부만 보임을 숨기지 않는다 - 2026-10-13]
+   * 예전에는 조회가 끝내 실패해도 「이 지역에는 아직 등록된 공간이 없습니다」로 보였고(오류가 「없음」으로
+   * 위장), 서버가 limit(500) 때문에 잘라 보낸 업체도 말없이 빠졌다. 실패는 다시 시도할 수 있게 알리고,
+   * 못 받은 건수가 있으면(화면 영역 조회·검색일 때만) 결과 위에 한 줄로 알린다. 전국 표본 화면은 문구가
+   * 이미 「확대하면 전부 표시」라고 밝히고, 내 주변은 반경을 넓혀 가며 조회하므로 대상이 아니다.
+   */
+  const isError = isNearbyMode ? nearbyQuery.isError : isBrowseMode ? browseQuery.isError : bizQuery.isError;
+  const retryResults = () => {
+    void (isNearbyMode ? nearbyQuery.refetch() : isBrowseMode ? browseQuery.refetch() : bizQuery.refetch());
+  };
+  const resultNotice = isBrowseMode
+    ? isViewportScope
+      ? browseNotice(browseQuery.data?.missing ?? 0)
+      : null
+    : isSearchMode
+    ? searchNotice(bizQuery.data?.missing ?? 0)
+    : null;
+
   const mapCanvas = (
     <MapCanvas
       places={places}
@@ -421,6 +449,9 @@ export default function Page() {
           hasSearched={hasSearched}
           isLoading={isLoading}
           isFetching={isFetchingResults}
+          isError={isError}
+          onRetry={retryResults}
+          notice={resultNotice}
           activeGroupLabel={activeGroupLabel}
           selectedPlace={selectedPlace}
           region={region}
@@ -625,11 +656,19 @@ export default function Page() {
           <span className="tp-caption min-w-0 truncate text-[var(--color-deep-blue)]">
             {statusLabel}
             <span className="ml-1.5 text-[11px] font-normal text-[#8A90B4]">
-              {isFetchingResults ? "검색 중..." : hasSearched ? `${places.length}곳${activeGroupLabel ? ` · ${activeGroupLabel}` : ""}` : ""}
+              {isFetchingResults ? "검색 중..." : isError ? "불러오지 못했어요" : hasSearched ? `${places.length}곳${activeGroupLabel ? ` · ${activeGroupLabel}` : ""}` : ""}
             </span>
           </span>
         </div>
-        <PlaceList places={places} hasSearched={hasSearched && !isLoading} onSelect={handleSelect} />
+        <PlaceList
+          places={places}
+          hasSearched={hasSearched}
+          isLoading={isLoading}
+          isError={isError}
+          onRetry={retryResults}
+          notice={resultNotice}
+          onSelect={handleSelect}
+        />
       </BottomSheet>
 
       <PlaceDetailSheet place={selectedPlace} region={region} onClose={() => selectPlace(null)} />

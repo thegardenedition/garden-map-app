@@ -12,6 +12,7 @@ import {
   searchBizPlaces,
   searchNearbyAdaptive,
   type NearbyResult,
+  type PlaceResult,
   searchParks,
   fetchProjectPins,
 } from "./api";
@@ -77,9 +78,11 @@ export function snapBbox([minLng, minLat, maxLng, maxLat]: Bbox): Bbox {
   ];
 }
 
-export function useBizSearch(region: Region, keyword: string): UseQueryResult<Place[]> {
-  const debouncedKeyword = useDebouncedValue(keyword, 300);
-  const term = debouncedKeyword.trim();
+// [디바운스 없음] 이 훅에 들어오는 keyword 는 사용자가 검색 버튼·엔터·추천 항목으로 「제출한」 값(submittedTerm)이다.
+// 예전에는 이미 확정된 값에 300ms 를 한 번 더 걸어서, 제출 직후 그 시간 동안 쿼리가 꺼진 채 「0곳 / 등록된 공간이 없습니다」가
+// 깜빡였다. 타이핑 중 요청을 아끼는 디바운스는 입력창(추천) 쪽의 일이고 여기서는 필요 없다.
+export function useBizSearch(region: Region, keyword: string): UseQueryResult<PlaceResult> {
+  const term = keyword.trim();
   return useQuery({
     queryKey: ["biz-places", region, term],
     queryFn: () => searchBizPlaces(region, term),
@@ -98,8 +101,8 @@ export function useBizSearch(region: Region, keyword: string): UseQueryResult<Pl
 // [속도 개선] 공원은 전국 데이터를 다 훑어야 해서 느리다. useBizSearch와 별개 쿼리로 돌려서
 // 조경회사/자재 결과를 가로막지 않게 한다. fetchAllParks는 세션 내에서 캐시된다.
 export function useParkSearch(keyword: string): UseQueryResult<Place[]> {
-  const debouncedKeyword = useDebouncedValue(keyword, 300);
-  const term = debouncedKeyword.trim();
+  // useBizSearch 와 같은 이유로 디바운스를 걸지 않는다(제출된 검색어).
+  const term = keyword.trim();
   return useQuery({
     queryKey: ["park-places", term],
     queryFn: () => searchParks(term),
@@ -121,7 +124,7 @@ export function useBrowseSearch(
   sub: SubId | null,
   viewport: Viewport | null,
   enabled: boolean
-): UseQueryResult<Place[]> {
+): UseQueryResult<PlaceResult> {
   const useBbox = Boolean(viewport) && (viewport as Viewport).level <= VIEWPORT_MAX_LEVEL;
   const snapped = useMemo(
     () => (useBbox && viewport ? snapBbox(viewport.bbox) : null),

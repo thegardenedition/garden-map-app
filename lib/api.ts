@@ -1,6 +1,7 @@
 import type { GroupId, Place, ProjectPin, Region, SubId } from "./types";
 import { CATEGORY_LIKE_TERMS, UMBRELLA_SEARCH_TERMS, classifyBiz, isExcludedName, matchesSearch } from "./classify";
 import parkRegistryRaw from "./park-registry.json";
+import { countMissing } from "./truncation";
 
 // [네트워크 회복탄력성]
 // 이 앱은 magazinegreen.co.kr(Webflow) 배포본과 동일한 백엔드를 그대로 재사용한다.
@@ -11,7 +12,8 @@ import parkRegistryRaw from "./park-registry.json";
 // [Supabase 제거] 예전에는 "내 주변에서 찾기"만 Supabase PostGIS RPC 를 따로 호출했다. 그런데
 // 그 테이블(garden_biz)에는 100행밖에 없고 전부 서울이라, 서울 밖 사용자에게는 항상 0건이었다.
 // 같은 데이터가 D1 에 전국 규모로 있으므로 원천을 하나로 합쳤다. 이제 anon key 도 필요 없다.
-const WORKER_BASE = "https://nongsaro-proxy.chgreena.workers.dev";
+// NEXT_PUBLIC_WORKER_BASE 는 로컬 시험용(모의 서버로 정상·오류·500건 초과 상태를 재현)이다. 배포 환경에는 설정하지 않으므로 기본값이 쓰인다.
+const WORKER_BASE = process.env.NEXT_PUBLIC_WORKER_BASE ?? "https://nongsaro-proxy.chgreena.workers.dev";
 
 // 상태코드를 들고 다니는 오류. 예전에는 `new Error("HTTP 429")` 로 던져서 재시도할지 말지를
 // 판단할 근거가 문자열밖에 없었다. 상태를 필드로 들고 있으면 아래 isRetriableError 와
@@ -189,7 +191,20 @@ export type Bbox = [number, number, number, number];
 // "전국"으로 조회하면 수집 순서상 앞쪽인 서울·부산·대구만 나오고 전남·충남·강원·제주 등은
 // 통째로 빠졌다(경기도조차 928건 중 92건만). 이제 서버가 지역순으로 안정 정렬하고
 // total 을 함께 돌려주며, 반경/이름 검색도 서버에서 처리한다.
-async function fetchBizV2(query: BizV2Query): Promise<Place[]> {
+/** 한 번의 조회 결과 + 서버가 알려 준 전체 건수. limit 보다 total 이 크면 그만큼은 받지 못한 것이다. */
+interface BizV2Page {
+  places: Place[];
+  total: number;
+  fetched: number;
+}
+
+/** 결과와 함께 화면에 「일부만 보임」 안내를 낼 수 있게 못 받은 건수를 같이 돌려주는 조회 결과. */
+export interface PlaceResult {
+  places: Place[];
+  missing: number;
+}
+
+async function fetchBizV2Page(query: BizV2Query): Promise<BizV2Page> {
   const params = new URLSearchParams();
   if (query.region) params.set("region", query.region);
   if (query.group) params.set("group", query.group);
@@ -202,7 +217,7 @@ async function fetchBizV2(query: BizV2Query): Promise<Place[]> {
   const res = await fetchWithRetry(`${WORKER_BASE}/bizdb-v2?${params}`);
   const data = await res.json();
   const rows: BizV2Row[] = data?.results ?? [];
-  return rows
+  const places: Place[] = rows
     .filter((r) => parseFloat(String(r.lat)) && parseFloat(String(r.lng)))
     .map((r) => ({
       placeId: `v2-${r.id}`,
@@ -218,6 +233,13 @@ async function fetchBizV2(query: BizV2Query): Promise<Place[]> {
       distanceM: typeof r.distance_m === "number" ? r.distance_m : null,
       businessCategory: r.category_path || null,
     }));
+  // 서버가 total 을 주지 않으면(구버전 응답) 잘렸는지 알 수 없으므로 받은 만큼을 전체로 본다.
+  const total = typeof data?.total === "number" ? data.total : rows.length;
+  return { places, total, fetched: rows.length };
+}
+
+async function fetchBizV2(query: BizV2Query): Promise<Place[]> {
+  return (await fetchBizV2Page(query)).places;
 }
 
 interface CustomPinRow {
@@ -348,9 +370,10 @@ export async function browseByCategory(
   region: Region,
   group: GroupId | null,
   sub: SubId | null
-): Promise<Place[]> {
+): Promise<PlaceResult> {
   // searchParks가 이제 fetchCustomPins(park)까지 합쳐서 돌려주므로 여기서 따로 합칠 게 없다.
-  if (group === "park") return searchParks("", true);
+  // 이 경로는 의도적으로 시도별 균등 표본이라(화면 문구가 「확대하면 전부 표시」라고 밝힌다) 누락 건수는 0 으로 둔다.
+  if (group === "park") return { places: await searchParks("", true), missing: 0 };
   const groups: GroupId[] = group ? [group] : ["company", "material"];
   const [lists, customAll] = await Promise.all([
     Promise.all(groups.map((g) => fetchBizV2({ region, group: g, sub: sub ?? undefined, limit: 500 }))),
@@ -360,7 +383,7 @@ export async function browseByCategory(
     customAll.filter((p) => groups.includes(p.categoryDepth1)),
     sub
   );
-  return [...custom, ...lists.flat().filter((p) => !isExcludedName(p.placeName))];
+  return { places: [...custom, ...lists.flat().filter((p) => !isExcludedName(p.placeName))], missing: 0 };
 }
 
 // [뷰포트 조회] 지도에 실제로 보이는 영역만 가져온다.
@@ -374,7 +397,7 @@ export async function browseByCategory(
 // 받으려면 코드 11종 x 페이지를 훑는 대량 팬아웃이 한 번 필요하다. 이걸 기본 탐색에 섞으면
 // 지도를 켜자마자 수십 번의 요청이 나가므로, "공원/수목원" 칩을 직접 눌렀을 때만 불러온다.
 // 그때는 세션 캐시(fetchAllParks)를 화면 영역으로 거르기만 하면 되므로 이후 비용이 없다.
-export async function browseByBbox(bbox: Bbox, group: GroupId | null, sub: SubId | null): Promise<Place[]> {
+export async function browseByBbox(bbox: Bbox, group: GroupId | null, sub: SubId | null): Promise<PlaceResult> {
   const [minLng, minLat, maxLng, maxLat] = bbox;
   const inBox = (p: Place) =>
     p.coordinates[0] >= minLng &&
@@ -392,19 +415,23 @@ export async function browseByBbox(bbox: Bbox, group: GroupId | null, sub: SubId
       fetchCustomPins(bbox, "park"),
       fetchCityParks(bbox),
     ]);
-    return mergeDedup(filterCustomBySub(custom, sub), all.filter(inBox), filterCustomBySub(cityParks, sub));
+    return { places: mergeDedup(filterCustomBySub(custom, sub), all.filter(inBox), filterCustomBySub(cityParks, sub)), missing: 0 };
   }
 
   const groups: GroupId[] = group ? [group] : ["company", "material"];
-  const [lists, customAll] = await Promise.all([
-    Promise.all(groups.map((g) => fetchBizV2({ bbox, group: g, sub: sub ?? undefined, limit: 500 }))),
+  const [pages, customAll] = await Promise.all([
+    Promise.all(groups.map((g) => fetchBizV2Page({ bbox, group: g, sub: sub ?? undefined, limit: 500 }))),
     fetchCustomPins(bbox),
   ]);
   const custom = filterCustomBySub(
     customAll.filter((p) => groups.includes(p.categoryDepth1)),
     sub
   );
-  return mergeDedup(custom, lists.flat().filter((p) => !isExcludedName(p.placeName)));
+  // limit(500) 을 넘는 지역에서는 서버가 이름순으로 잘라 보내므로, 받지 못한 건수를 화면에 알릴 수 있게 함께 돌려준다.
+  return {
+    places: mergeDedup(custom, pages.flatMap((p) => p.places).filter((p) => !isExcludedName(p.placeName))),
+    missing: countMissing(pages),
+  };
 }
 
 const PARK_SUB_CODES: Record<string, string[]> = {
@@ -643,8 +670,8 @@ function sortByRelevance(items: Place[], term: string): Place[] {
 // [속도 개선] 예전엔 검색할 때마다 전국 공원 데이터(최대 15페이지 x 11개 코드)를 다 불러온 뒤에야
 // 결과를 보여줬다. 조경회사/자재 결과는 거의 항상 빠르게 끝나므로, 공원 검색을 별도 함수로 분리해서
 // 두 개의 독립된 쿼리로 돌린다 — 조경회사/자재는 먼저 뜨고, 공원은 뒤에서 채워진다.
-export async function searchBizPlaces(region: Region, keyword: string): Promise<Place[]> {
-  if (!keyword) return [];
+export async function searchBizPlaces(region: Region, keyword: string): Promise<PlaceResult> {
+  if (!keyword) return { places: [], missing: 0 };
 
   const kakaoTask = fetchKakaoCombined(region, keyword).then((docs) => {
     const seen = new Set<string>();
@@ -677,8 +704,8 @@ export async function searchBizPlaces(region: Region, keyword: string): Promise<
     CATEGORY_LIKE_TERMS.includes(keyword) || UMBRELLA_SEARCH_TERMS.includes(keyword);
   const serverQ = isCategoryish ? undefined : keyword;
 
-  const v2CompanyTask = fetchBizV2({ region, group: "company", q: serverQ });
-  const v2MaterialTask = fetchBizV2({ region, group: "material", q: serverQ });
+  const v2CompanyTask = fetchBizV2Page({ region, group: "company", q: serverQ });
+  const v2MaterialTask = fetchBizV2Page({ region, group: "material", q: serverQ });
   const naverTask = fetchNaverIndependent(region, keyword);
   // [간단 핀] 지역 개념이 없어 전국을 다 받아 이름으로만 거른다 — 등록 건수 자체가
   // 적을 것으로 보여(수백 건 규모) 지금은 이 비용이 무시할 만하다.
@@ -693,8 +720,12 @@ export async function searchBizPlaces(region: Region, keyword: string): Promise<
     kakaoTask, v2CompanyTask, v2MaterialTask, naverTask, customTask,
   ]);
   const kakao = kakaoResult.status === "fulfilled" ? kakaoResult.value : [];
-  const v2Company = v2CompanyResult.status === "fulfilled" ? v2CompanyResult.value : [];
-  const v2Material = v2MaterialResult.status === "fulfilled" ? v2MaterialResult.value : [];
+  const v2Company = v2CompanyResult.status === "fulfilled" ? v2CompanyResult.value.places : [];
+  const v2Material = v2MaterialResult.status === "fulfilled" ? v2MaterialResult.value.places : [];
+  // 자체 DB 조회가 limit 때문에 잘렸는지(우산 검색어는 서버에서 이름으로 거르지 않아 500건 상한이 그대로 걸린다)
+  const missing = countMissing(
+    [v2CompanyResult, v2MaterialResult].flatMap((r) => (r.status === "fulfilled" ? [r.value] : []))
+  );
   const naver = naverResult.status === "fulfilled" ? naverResult.value : [];
   const custom = customResult.status === "fulfilled" ? customResult.value : [];
   if (kakaoResult.status === "rejected") console.error("[searchBizPlaces] 카카오 검색 실패:", kakaoResult.reason);
@@ -748,7 +779,7 @@ export async function searchBizPlaces(region: Region, keyword: string): Promise<
     keyword
   ).filter((p) => !isExcludedName(p.placeName));
 
-  return [...company, ...material];
+  return { places: [...company, ...material], missing };
 }
 
 // [속도 개선] 공원 검색은 전국 데이터를 다 훑어야 해서 느리다. searchBizPlaces와 별도 쿼리로 돌려서
