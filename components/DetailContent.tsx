@@ -20,6 +20,15 @@ import LeadModal from "./LeadModal";
  */
 const LEAD_FORM_LIVE_AT = new Date("2026-09-23T00:00:00+09:00").getTime();
 
+/*
+ * [문의 입구 스위치 — 2026-10-21 대표 지시]
+ * "정원지도에서 전문가 견적 연결은 후순위. 대표가 오픈하라고 하면 오픈한다." 지도 앱의 유일한
+ * 문의 입구(아래 「정원전문가 찾기」 버튼 → LeadModal / 채널그린 목록 링크)를 지우지 않고 숨긴다.
+ * 다시 열 때는 Vercel 환경변수 NEXT_PUBLIC_LEAD_ENTRY_OPEN=1 을 넣고 재배포하거나, 이 줄의
+ * 기본값을 바꾼다. 폼·mg-biz 워커는 그대로다.
+ */
+const LEAD_ENTRY_OPEN = process.env.NEXT_PUBLIC_LEAD_ENTRY_OPEN === "1";
+
 // [href를 주면 값 자체가 하이퍼링크가 된다 — 2026-09-10]
 // 홈페이지 URL을 여기 텍스트로만 보여줬더니 링크처럼 보이는데 눌러도 아무 반응이 없었다
 // (실제 이동은 아래 별도 "홈페이지" 버튼에서만 됐다). value를 <a>로 바꿔 그 자리에서 바로
@@ -83,7 +92,22 @@ function formatBusinessCategory(raw: string | null | undefined): string | null {
   return parts.slice(-2).join(" · ") || raw;
 }
 
-export default function DetailContent({ place, region }: { place: Place; region: Region }) {
+/**
+ * compact: 모바일에서 핀을 고른 직후의 작은 카드. 업종·이름·주소·바로 쓰는 버튼만 남기고
+ * 정보 줄과 하단 CTA는 펼쳤을 때만 보인다(2026-10-21 대표 "바텀이 시야를 가린다" — 상세
+ * 시트가 처음부터 화면 절반 넘게 올라와 지도를 덮었다).
+ */
+export default function DetailContent({
+  place,
+  region,
+  compact = false,
+  onExpand,
+}: {
+  place: Place;
+  region: Region;
+  compact?: boolean;
+  onExpand?: () => void;
+}) {
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const leadFormLive = Date.now() >= LEAD_FORM_LIVE_AT;
 
@@ -117,9 +141,9 @@ export default function DetailContent({ place, region }: { place: Place; region:
         {place.categoryDepth2 && subDef?.label}
       </span>
       <h3 className="tp-title mb-1 break-words text-[#0A0A23]">{place.placeName}</h3>
-      <p className="tp-body mb-2.5 break-words text-[#5A5A78]">{place.address}</p>
+      <p className={`tp-body mb-2.5 break-words text-[#5A5A78] ${compact ? "line-clamp-1" : ""}`}>{place.address}</p>
 
-      {place.source === "registry" ? (
+      {compact ? null : place.source === "registry" ? (
         /* [대장 출처] 한국수목원정원관리원이 직접 관리하는 값이라 외부에 다시 물어볼 필요가 없다.
            투어API가 주지 않는 입장료·반려동물 동반 여부를 여기서만 보여줄 수 있다. */
         <div>
@@ -222,7 +246,7 @@ export default function DetailContent({ place, region }: { place: Place; region:
 
       <div className="mt-3.5 flex flex-wrap gap-2">
         <a
-          className="tp-caption rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] bg-[var(--color-deep-blue)] px-4 py-2.5 text-white"
+          className="tp-caption inline-flex min-h-[44px] items-center rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] bg-[var(--color-deep-blue)] px-4 py-2.5 text-white"
           href={kakaoDirLink(place.placeName, place.coordinates[1], place.coordinates[0])}
           target="_blank"
           rel="noopener noreferrer"
@@ -231,7 +255,7 @@ export default function DetailContent({ place, region }: { place: Place; region:
         </a>
         {(place.homepageDirect || naverHomepage.data) && (
           <a
-            className="tp-caption rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] px-4 py-2.5 text-[var(--color-deep-blue)]"
+            className="tp-caption inline-flex min-h-[44px] items-center rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] px-4 py-2.5 text-[var(--color-deep-blue)]"
             href={place.homepageDirect || naverHomepage.data!}
             target="_blank"
             rel="noopener noreferrer"
@@ -246,7 +270,7 @@ export default function DetailContent({ place, region }: { place: Place; region:
             네이버 단독 결과는 이 값이 없어 버튼 자체가 안 뜬다. */}
         {place.homepage && (
           <a
-            className="tp-caption rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] px-4 py-2.5 text-[var(--color-deep-blue)]"
+            className="tp-caption inline-flex min-h-[44px] items-center rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] px-4 py-2.5 text-[var(--color-deep-blue)]"
             href={place.homepage}
             target="_blank"
             rel="noopener noreferrer"
@@ -259,14 +283,27 @@ export default function DetailContent({ place, region }: { place: Place; region:
           text={place.address}
           url={kakaoPlaceLink(place.placeName, place.coordinates[1], place.coordinates[0])}
         />
+        {compact && onExpand && (
+          <button
+            onClick={onExpand}
+            aria-expanded={false}
+            className="tp-caption inline-flex min-h-[44px] items-center gap-1 rounded-2xl border-[1.5px] border-[#DADDEF] px-4 py-2.5 text-[var(--color-deep-blue)]"
+          >
+            자세히
+            <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* [Sticky CTA] 네온 옐로우 배경 + 딥 블루 텍스트, 탭 시 scale 0.95 햅틱 애니메이션.
           [잠정 링크 — 2026-09-19] mg-biz 리드 폼(LEAD_FORM_LIVE_AT)이 뜨기 전까지는 리드
           모달 대신 채널그린 정원작가 리스트로 바로 보낸다. 개인정보를 우리 쪽에서 받는 게
           아니라 외부 링크일 뿐이라 리드 폼의 방침 개정 게이트와는 무관하다. 폼이 열리면
-          원래 문구·동작으로 자동 전환된다(별도 배포 불필요). */}
-      {leadFormLive ? (
+          원래 문구·동작으로 자동 전환된다(별도 배포 불필요). 작은 카드(compact)에서는 숨긴다.
+          LEAD_ENTRY_OPEN 이 꺼져 있으면(기본) 어디에서도 보이지 않는다. */}
+      {compact || !LEAD_ENTRY_OPEN ? null : leadFormLive ? (
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => setLeadModalOpen(true)}
@@ -286,7 +323,7 @@ export default function DetailContent({ place, region }: { place: Place; region:
         </motion.a>
       )}
 
-      {leadFormLive && leadModalOpen && <LeadModal place={place} onClose={() => setLeadModalOpen(false)} />}
+      {LEAD_ENTRY_OPEN && leadFormLive && leadModalOpen && <LeadModal place={place} onClose={() => setLeadModalOpen(false)} />}
     </div>
   );
 }

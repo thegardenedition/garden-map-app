@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import type { Place, ProjectPin } from "@/lib/types";
 import { SUB_DEFS, formatDistance } from "@/lib/types";
+import { SHORT_SCREEN_QUERY } from "@/lib/useIsDesktop";
 import {
   PIN_ACCENT_COLOR,
   PIN_COMPACT,
@@ -40,11 +41,12 @@ declare global {
 // 바로 실제 결과를 보여줄 수 있다. 사용자가 다른 지역을 보려면 축소하거나 지역 필터를 쓰면 된다.
 const SEOUL_METRO = { lat: 37.49, lng: 127.02, level: 9 };
 
-// [선택한 핀이 바텀시트 경계에 붙어 보이던 문제] app/page.tsx가 장소를 선택하면
-// <BottomSheet snap={selectedPlaceId ? "peek" : sheetSnap} .../> 로 시트를 강제로 "peek"
-// 스냅으로 연다. BottomSheet.tsx의 SNAP_VH.peek 값(화면 높이의 30%)과 반드시 같아야 한다 —
-// 두 파일이 서로 다른 곳에서 같은 값을 들고 있어 어긋날 위험이 있지만, 시트 코드를 이
-// 컴포넌트가 import하지 않아 DOM을 직접 재는 쪽보다 이 편이 더 단순하다고 판단했다.
+// [선택한 핀이 바텀시트 경계에 붙어 보이던 문제] 처음엔 장소를 선택하면 열리는 리스트
+// 시트의 peek 높이(화면의 30%)를 상수로 박아 핀을 그만큼 위로 올렸다. 그런데 실제로 그 위를
+// 덮는 건 PlaceDetailSheet(내용만큼, 최대 70dvh)이고 위쪽엔 배지·검색바·칩 묶음도 떠 있다 —
+// 휴대폰에선 상세 시트가 화면 절반 가까이 올라와 핀이 시트 윗가장자리에 반쯤 가려졌다
+// (2026-10-21 대표 신고). 이제는 두 요소를 data 속성으로 찾아 실제 높이를 재고, 그 사이
+// 남는 띠의 한가운데에 핀을 놓는다. 이 값은 요소를 못 찾았을 때만 쓰는 대비값이다.
 const SELECTED_PIN_SHEET_VH = 0.3;
 
 /*
@@ -1195,7 +1197,9 @@ export default function MapCanvas({
 
     if (focusCoords) {
       const loc = new kakao.maps.LatLng(focusCoords.lat, focusCoords.lng);
-      map.panTo(loc);
+      // 이동은 아래 갈래에서 레벨과 함께 한 번에 한다. 예전처럼 여기서 panTo 하고 아래에서
+      // setLevel(animate) 하면 레벨이 바뀌는 순간 panTo 가 씹혀 지도가 내 위치로 안 갔다
+      // (2026-10-21 라이브 실측: 8→5 에서 중심이 그대로). "현위치가 안 잡힌다"의 한 원인.
       /*
        * [정확도에 맞춰 확대한다]
        * 예전에는 오차와 무관하게 항상 level 6 으로 바짝 당겼다. 브라우저가 Wi-Fi 로 3km
@@ -1228,7 +1232,7 @@ export default function MapCanvas({
       } else {
         // 검색이 아니라 "현재 위치만 보기"다. 훑은 범위가 없으니 오차만큼만 당긴다.
         const level = acc === null ? 6 : acc <= 200 ? 5 : acc <= 1000 ? 6 : acc <= 5000 ? 7 : 8;
-        map.setLevel(level, { animate: true });
+        map.jump(loc, level, { animate: true });
       }
 
       // 훑은 범위를 눈에 보이게 그린다. 목록에 있는데 화면 밖인 곳이 왜 나왔는지 설명해 준다.
@@ -1287,8 +1291,8 @@ export default function MapCanvas({
     }
     if (places.length === 0) return;
     const first = places[0];
-    map.setLevel(9, { animate: true });
-    map.panTo(new kakao.maps.LatLng(first.coordinates[1], first.coordinates[0]));
+    // setLevel(animate)+panTo 는 레벨이 바뀌면 이동이 씹힌다 — 한 번에 바꾸는 jump 로.
+    map.jump(new kakao.maps.LatLng(first.coordinates[1], first.coordinates[0]), 9, { animate: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusTrigger]);
 
@@ -1416,8 +1420,39 @@ export default function MapCanvas({
      */
     let target = new kakao.maps.LatLng(place.coordinates[1], place.coordinates[0]);
     if (!isDesktopRef.current) {
-      const h = mapDivRef.current?.clientHeight;
-      if (h) {
+      const mapDiv = mapDivRef.current;
+      const h = mapDiv?.clientHeight;
+      if (mapDiv && h) {
+        // 핀을 놓을 띠 = 위쪽 떠 있는 묶음 아래 ~ 상세 시트 위. 상세 시트는 이 effect와 같은
+        // 렌더에서 DOM에 들어와 아직 아래에서 올라오는 중(transform)이지만, offsetHeight는
+        // transform과 무관해서 최종 높이를 그대로 준다.
+        // 높이 낮은 화면(휴대폰 가로)은 작은 카드를 쓰지 않으므로 카드 이전 계산 그대로 둔다
+        // (11-09 가로 전용 카드 때 다시 본다). 이때 topPx 0·시트 30%면 예전 식과 같다.
+        const short = window.matchMedia(SHORT_SCREEN_QUERY).matches;
+        const mapRect = mapDiv.getBoundingClientRect();
+        const topEl = short ? null : document.querySelector<HTMLElement>("[data-gm-map-top]");
+        const sheetEl = short ? null : document.querySelector<HTMLElement>("[data-gm-detail-sheet]");
+        const topPx = topEl ? Math.min(Math.max(topEl.getBoundingClientRect().bottom - mapRect.top, 0), h) : 0;
+        const sheetPx = sheetEl ? sheetEl.offsetHeight : h * SELECTED_PIN_SHEET_VH;
+        const bandBottom = Math.max(h - sheetPx, topPx);
+        const bandCenter = (topPx + bandBottom) / 2;
+        const shiftPx = h / 2 - bandCenter;
+
+        // [가려질 때만 움직인다 — 2026-10-21] 이미 핀이 하나하나 보이는 축척(레벨 5 이하)이고,
+        // 고른 핀이 지금 자리 그대로 위 묶음과 시트 사이에 다 들어온다면 지도를 건드리지 않는다.
+        // 확대도 이동도 없이 핀만 선택 모양으로 바뀐다 — 화면이 튀지 않는다.
+        const nowProj = map.getProjection();
+        if (nowProj && !short && map.getLevel() <= 5) {
+          const tip = nowProj.containerPointFromCoords(target);
+          const margin = 8;
+          const fits =
+            tip.x >= 24 &&
+            tip.x <= mapDiv.clientWidth - 24 &&
+            tip.y - size.anchorY >= topPx + margin &&
+            tip.y <= bandBottom - margin;
+          if (fits) return;
+        }
+
         const prevCenter = map.getCenter();
         const prevLevel = map.getLevel();
         map.setLevel(4);
@@ -1426,15 +1461,22 @@ export default function MapCanvas({
         if (proj) {
           const centerPoint = proj.containerPointFromCoords(map.getCenter());
           target = proj.coordsFromContainerPoint(
-            new kakao.maps.Point(centerPoint.x, centerPoint.y + (h * SELECTED_PIN_SHEET_VH) / 2)
+            new kakao.maps.Point(centerPoint.x, centerPoint.y + shiftPx)
           );
         }
         map.setLevel(prevLevel);
         map.setCenter(prevCenter);
       }
     }
-    map.setLevel(4, { animate: true });
-    map.panTo(target);
+    /*
+     * [레벨이 바뀌면 이동이 씹히던 문제 — 2026-10-21 라이브 실측]
+     * setLevel(4,{animate:true}) 바로 뒤에 panTo 를 부르면, 레벨이 실제로 바뀌는 경우(6→4,
+     * 8→4 등) 확대 애니메이션이 panTo 를 덮어써 지도가 원래 자리에 그대로 남았다 — 고른 핀이
+     * 화면 밖이나 시트 뒤에 있는 채로 끝났다(768폭에서 핀 y=-50). 이미 레벨 4였을 때만 우연히
+     * 맞았다. 카카오 jump 는 중심과 레벨을 한 번의 애니메이션으로 바꾼다(라이브에서 6·8→4 모두
+     * 목표 좌표에 오차 0.0001° 이내로 도착 확인).
+     */
+    map.jump(target, 4, { animate: true });
   }, [selectedPlaceId, places]);
 
   return (

@@ -52,9 +52,56 @@ const FLOAT_FADE_TRANSITION = { duration: 0.18 };
 
 // 실패 이유마다 할 수 있는 일이 다르다. 예전에는 무엇이든 "위치 권한을 확인해주세요" 였는데,
 // 실내에서 시간이 초과된 사람에게는 틀린 안내다.
+// [정밀 위치가 안 잡힐 때 한 번 더 — 2026-10-21] GEO_OPTS 는 GPS 를 켜고 10초를 기다린다.
+// 실내·아이폰에서는 그 안에 못 잡아 곧장 "시간 초과"로 끝나는 일이 잦았다(대표 "현위치가 잘
+// 안 잡힌다"). 권한 거부가 아닌 실패라면 Wi-Fi·기지국 기반의 덜 정밀한 위치로 한 번만 다시
+// 묻는다 — 반경 5km 검색에는 수백 m 오차여도 아무것도 안 보이는 것보다 낫다.
+const GEO_FALLBACK_OPTS: PositionOptions = {
+  enableHighAccuracy: false,
+  timeout: 6000,
+  maximumAge: 120000,
+};
+
+function getPositionWithFallback(
+  onOk: (pos: GeolocationPosition) => void,
+  onErr: (err: GeolocationPositionError) => void
+) {
+  navigator.geolocation.getCurrentPosition(
+    onOk,
+    (err) => {
+      if (err.code === err.PERMISSION_DENIED) return onErr(err);
+      navigator.geolocation.getCurrentPosition(onOk, onErr, GEO_FALLBACK_OPTS);
+    },
+    GEO_OPTS
+  );
+}
+
+// 권한 거부 안내는 다시 켜는 곳이 환경마다 달라서 나눈다. 카카오톡·네이버 등 앱 안 브라우저는
+// 위치를 아예 막는 경우가 많아 바깥 브라우저로 여는 길을 알려 준다.
+function permissionDeniedMessage(): string {
+  const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  if (/KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\//i.test(ua)) {
+    return "앱 안에서 연 화면이라 위치를 쓸 수 없습니다. 오른쪽 위 메뉴에서 「다른 브라우저로 열기」를 눌러 주세요.";
+  }
+  if (/iPhone|iPad|iPod/i.test(ua)) {
+    return "위치 권한이 꺼져 있습니다. 설정 > Safari > 위치에서 「허용」 또는 「묻기」로 바꿔 주세요.";
+  }
+  return "위치 권한이 꺼져 있습니다. 주소창의 자물쇠 아이콘에서 위치 권한을 허용해 주세요.";
+}
+
+// 위치를 찾는 동안 ◎ 자리에 도는 고리. 움직임 줄이기 설정에서는 돌지 않고 흐리게만 보인다.
+function LocatingSpinner() {
+  return (
+    <span
+      aria-hidden
+      className="h-5 w-5 rounded-full border-2 border-current border-t-transparent opacity-80 motion-safe:animate-spin"
+    />
+  );
+}
+
 function geoErrorMessage(err: GeolocationPositionError): string {
   if (err.code === err.PERMISSION_DENIED) {
-    return "위치 권한이 꺼져 있습니다. 주소창의 자물쇠 아이콘에서 위치 권한을 허용해 주세요.";
+    return permissionDeniedMessage();
   }
   if (err.code === err.TIMEOUT) {
     return "위치를 잡는 데 시간이 오래 걸립니다. 실내라면 창가로 옮기거나 잠시 후 다시 시도해 주세요.";
@@ -117,6 +164,8 @@ export default function Page() {
   // 드롭다운이 열려 있을 때만 컨테이너 z-index를 --z-search-suggest(42)로 올리고,
   // 닫히면 원래 값으로 되돌려 다른 레이어링(예: 필터 팝오버)에 영향이 없게 한다.
   const [searchSuggestOpen, setSearchSuggestOpen] = useState(false);
+  // 장소 상세 카드의 실제 높이 — 목록 시트를 그만큼만 올려 카드 뒤에 숨긴다(PlaceDetailSheet).
+  const [detailSheetH, setDetailSheetH] = useState<number | null>(null);
   // [지도만 보기] 검색·필터가 끝난 뒤에도 상단 스택이 계속 지도 위 공간을 차지해 답답하다는
   // 피드백을 받았다. 상단 스택 전체(배지·검색바·칩)를 잠깐 걷어내는 토글이다. 상태는 그대로
   // 두고 화면에서만 숨기므로, 다시 누르면 검색어·필터가 그대로 남아 있다.
@@ -282,7 +331,7 @@ export default function Page() {
       return;
     }
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
+    getPositionWithFallback(
       (pos) => {
         setLocating(false);
         setSubmittedTerm("");
@@ -296,23 +345,27 @@ export default function Page() {
       (err) => {
         setLocating(false);
         alert(geoErrorMessage(err));
-      },
-      GEO_OPTS
+      }
     );
   }
 
   function handleLocateOnly() {
     if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
+    // 예전엔 찾는 동안(최대 10초) 버튼에 아무 변화가 없어 눌린 건지조차 알 수 없었다.
+    setLocating(true);
+    getPositionWithFallback(
       (pos) => {
+        setLocating(false);
         setLocateAccuracy(pos.coords.accuracy ?? null);
         setLocateCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setFocusTrigger((t) => t + 1);
       },
       // 예전에는 실패 콜백이 아예 없어서, 권한이 꺼져 있으면 버튼을 눌러도 아무 일도
       // 일어나지 않았다. 사용자는 버튼이 고장난 줄 안다.
-      (err) => alert(geoErrorMessage(err)),
-      GEO_OPTS
+      (err) => {
+        setLocating(false);
+        alert(geoErrorMessage(err));
+      }
     );
   }
 
@@ -455,10 +508,12 @@ export default function Page() {
           </AnimatePresence>
           <button
             onClick={handleLocateOnly}
-            aria-label="현재 위치"
+            disabled={locating}
+            aria-busy={locating}
+            aria-label={locating ? "현재 위치 찾는 중" : "현재 위치"}
             className="absolute bottom-6 right-6 z-[var(--z-desktop-float-actions)] flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)] shadow-[0_8px_20px_-6px_rgba(0,0,0,0.15)]"
           >
-            ◎
+            {locating ? <LocatingSpinner /> : "◎"}
           </button>
         </div>
       </div>
@@ -478,6 +533,7 @@ export default function Page() {
           껍데기는 터치를 흘려보내고, 실제 조작이 필요한 자식만 받는다. */}
       <div
         ref={topStackRef}
+        data-gm-map-top
         className={`pointer-events-none absolute inset-x-3 top-3 ${
           searchSuggestOpen ? "z-[var(--z-search-suggest)]" : "z-[var(--z-mobile-topstack)]"
         }`}
@@ -594,6 +650,7 @@ export default function Page() {
         onSnapChange={setSheetSnap}
         dragHandleLabel="결과 목록 시트"
         minTopPx={sheetMinTop}
+        coverPx={selectedPlaceId ? detailSheetH : null}
         floatingActions={
           // [두 버튼을 한 덩어리로] 예전엔 원형 버튼 두 개가 각자 그림자를 지고 따로 떠 있어
           // 지도 위에 얹힌 장치가 하나 더 있는 것처럼 보였다. 기능은 그대로 두고(따로따로
@@ -609,10 +666,12 @@ export default function Page() {
             </button>
             <button
               onClick={handleLocateOnly}
-              aria-label="현재 위치"
+              disabled={locating}
+              aria-busy={locating}
+              aria-label={locating ? "현재 위치 찾는 중" : "현재 위치"}
               className="flex h-12 w-12 items-center justify-center border-t border-white/15 bg-[var(--color-deep-blue)] text-lg text-[var(--color-neon-yellow)]"
             >
-              ◎
+              {locating ? <LocatingSpinner /> : "◎"}
             </button>
           </div>
         }
@@ -632,7 +691,12 @@ export default function Page() {
         <PlaceList places={places} hasSearched={hasSearched && !isLoading} onSelect={handleSelect} />
       </BottomSheet>
 
-      <PlaceDetailSheet place={selectedPlace} region={region} onClose={() => selectPlace(null)} />
+      <PlaceDetailSheet
+        place={selectedPlace}
+        region={region}
+        onClose={() => selectPlace(null)}
+        onHeightChange={setDetailSheetH}
+      />
     </div>
   );
 }
