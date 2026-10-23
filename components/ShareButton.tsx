@@ -17,6 +17,8 @@ export default function ShareButton({
   title,
   text,
   url,
+  className,
+  children,
 }: {
   /** 공유 카드 제목 (장소명) */
   title: string;
@@ -24,6 +26,10 @@ export default function ShareButton({
   text?: string;
   /** 공유할 링크 */
   url: string;
+  /** 모양만 바꿀 때(모바일 떠 있는 장소 카드의 둥근 아이콘 버튼). 없으면 기존 선 버튼. */
+  className?: string;
+  /** 글자 대신 보일 내용(아이콘). 복사됐을 땐 aria-label 이 바뀐다. */
+  children?: React.ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -49,10 +55,13 @@ export default function ShareButton({
     <button
       type="button"
       onClick={handleShare}
-      aria-label="공유하기"
-      className="tp-caption inline-flex min-h-[44px] items-center rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] px-4 py-2.5 text-[var(--color-deep-blue)]"
+      aria-label={copied ? "링크 복사됨" : "공유하기"}
+      className={
+        className ??
+        "tp-caption inline-flex min-h-[44px] items-center rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] px-4 py-2.5 text-[var(--color-deep-blue)]"
+      }
     >
-      {copied ? "링크 복사됨" : "공유하기"}
+      {children ?? (copied ? "링크 복사됨" : "공유하기")}
     </button>
   );
 }

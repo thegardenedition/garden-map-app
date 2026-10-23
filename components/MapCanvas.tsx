@@ -1433,7 +1433,14 @@ export default function MapCanvas({
         const topEl = short ? null : document.querySelector<HTMLElement>("[data-gm-map-top]");
         const sheetEl = short ? null : document.querySelector<HTMLElement>("[data-gm-detail-sheet]");
         const topPx = topEl ? Math.min(Math.max(topEl.getBoundingClientRect().bottom - mapRect.top, 0), h) : 0;
-        const sheetPx = sheetEl ? sheetEl.offsetHeight : h * SELECTED_PIN_SHEET_VH;
+        // 떠 있는 카드(B안)는 바닥에서 띄워져 있어 높이 대신 "윗변~바닥"을 쓴다. offsetTop 은
+        // 아직 올라오는 중인 transform 과 무관하다.
+        const sheetParentH = (sheetEl?.offsetParent as HTMLElement | null)?.clientHeight;
+        const sheetPx = sheetEl
+          ? sheetParentH
+            ? sheetParentH - sheetEl.offsetTop
+            : sheetEl.offsetHeight
+          : h * SELECTED_PIN_SHEET_VH;
         const bandBottom = Math.max(h - sheetPx, topPx);
         const bandCenter = (topPx + bandBottom) / 2;
         const shiftPx = h / 2 - bandCenter;

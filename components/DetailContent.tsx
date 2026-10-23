@@ -96,17 +96,32 @@ function formatBusinessCategory(raw: string | null | undefined): string | null {
  * compact: 모바일에서 핀을 고른 직후의 작은 카드. 업종·이름·주소·바로 쓰는 버튼만 남기고
  * 정보 줄과 하단 CTA는 펼쳤을 때만 보인다(2026-10-21 대표 "바텀이 시야를 가린다" — 상세
  * 시트가 처음부터 화면 절반 넘게 올라와 지도를 덮었다).
+ *
+ * look="float": 모바일 장소 카드의 B안(2026-10-22 대표 선택 — 딥블루로 띄운 카드, 둥근
+ * 모서리). 업종 타일+이름 머리, 길찾기 알약 하나만 채우고 나머지는 둥근 아이콘 버튼.
+ * 색은 globals.css 의 --card-* 한 곳에서만 온다. 데스크톱 사이드바는 look 없이 그대로.
  */
+// 키보드 포커스 링(2px 딥블루, 2px 띄움) — 디자인 진단 10-22 필수 조건.
+const FLOAT_FOCUS =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--card-primary)]";
+// 아이콘 22px + 글자 12.5px/600 을 세로로 쌓은 같은 폭 타일(높이 60px).
+const FLOAT_TILE = `flex h-[60px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl text-[12.5px] font-semibold tracking-[-0.01em] transition-[transform,background-color] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100 ${FLOAT_FOCUS}`;
+const FLOAT_TILE_SOFT = "bg-[var(--card-soft)] text-[var(--card-primary)]";
+
 export default function DetailContent({
   place,
   region,
   compact = false,
   onExpand,
+  onCollapse,
+  look,
 }: {
   place: Place;
   region: Region;
   compact?: boolean;
   onExpand?: () => void;
+  onCollapse?: () => void;
+  look?: "float";
 }) {
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const leadFormLive = Date.now() >= LEAD_FORM_LIVE_AT;
@@ -128,20 +143,48 @@ export default function DetailContent({
   });
 
   const subDef = SUB_DEFS[place.categoryDepth1]?.find((s) => s.id === place.categoryDepth2);
+  const float = look === "float";
+  const homepageUrl = place.homepageDirect || naverHomepage.data;
 
   return (
     <div>
-      <span className="tp-caption mb-2 inline-flex items-center gap-1.5 rounded-lg bg-[rgba(6,16,125,0.08)] px-3 py-1 text-[var(--color-deep-blue)]">
-        <CategoryIcon
-          group={place.categoryDepth1}
-          sub={place.categoryDepth2}
-          size={14}
-          color={GROUP_COLOR[place.categoryDepth1]}
-        />
-        {place.categoryDepth2 && subDef?.label}
-      </span>
-      <h3 className="tp-title mb-1 break-words text-[#0A0A23]">{place.placeName}</h3>
-      <p className={`tp-body mb-2.5 break-words text-[#5A5A78] ${compact ? "line-clamp-1" : ""}`}>{place.address}</p>
+      {float ? (
+        <>
+          {/* 오른쪽 48px 은 시트의 닫기 버튼 자리라 비워 둔다. */}
+          <div className="flex items-center gap-3 pr-11">
+            {/* 업종 아이콘은 흰색 하나로 — 색이 아니라 모양으로 구별한다(지도 핀과 같은 규칙). */}
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[var(--card-primary)] text-[var(--card-on-primary)]">
+              <CategoryIcon group={place.categoryDepth1} sub={place.categoryDepth2} size={26} color="currentColor" />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="truncate text-[12.5px] font-semibold text-[var(--card-meta)]">
+                {subDef?.label ?? ""}
+              </span>
+              {/* 긴 업체명이 잘리지 않게 2줄까지(카드 약 +26px, 상한 30% 안). */}
+              <h3 className="line-clamp-2 break-words text-[20px] font-extrabold leading-snug tracking-[-0.03em] text-[var(--card-title)]">
+                {place.placeName}
+              </h3>
+            </div>
+          </div>
+          <p className={`mt-2.5 break-words text-[14px] leading-snug tracking-[-0.01em] text-[var(--card-sub)] ${compact ? "line-clamp-2" : "mb-2.5"}`}>
+            {place.address}
+          </p>
+        </>
+      ) : (
+        <>
+          <span className="tp-caption mb-2 inline-flex items-center gap-1.5 rounded-lg bg-[rgba(6,16,125,0.08)] px-3 py-1 text-[var(--color-deep-blue)]">
+            <CategoryIcon
+              group={place.categoryDepth1}
+              sub={place.categoryDepth2}
+              size={14}
+              color={GROUP_COLOR[place.categoryDepth1]}
+            />
+            {place.categoryDepth2 && subDef?.label}
+          </span>
+          <h3 className="tp-title mb-1 break-words text-[#0A0A23]">{place.placeName}</h3>
+          <p className={`tp-body mb-2.5 break-words text-[#5A5A78] ${compact ? "line-clamp-1" : ""}`}>{place.address}</p>
+        </>
+      )}
 
       {compact ? null : place.source === "registry" ? (
         /* [대장 출처] 한국수목원정원관리원이 직접 관리하는 값이라 외부에 다시 물어볼 필요가 없다.
@@ -244,6 +287,75 @@ export default function DetailContent({
         </div>
       )}
 
+      {float ? (
+        /* [버튼 넷을 같은 크기 타일로 — 2026-10-22 대표 "아이콘이 안 보이고 의도가 안 읽힌다"]
+           아이콘만 있는 둥근 버튼은 뜻이 읽히지 않았다. 지도 앱들이 쓰는 방식대로 아이콘 아래에
+           글자를 붙인 같은 폭 타일로 두고, 길찾기만 딥블루로 채워 첫 행동을 분명히 한다. */
+        <div className="mt-3.5 flex gap-1.5">
+          <a
+            className={`${FLOAT_TILE} bg-[var(--card-primary)] text-[var(--card-on-primary)] active:bg-[var(--card-primary-pressed)]`}
+            href={kakaoDirLink(place.placeName, place.coordinates[1], place.coordinates[0])}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2.8l9.2 9.2-9.2 9.2L2.8 12z" />
+              <path d="M9 15v-3.5h6" />
+              <path d="M12.5 9l2.5 2.5-2.5 2.5" />
+            </svg>
+            길찾기
+          </a>
+          {homepageUrl && (
+            <a className={`${FLOAT_TILE} ${FLOAT_TILE_SOFT}`} href={homepageUrl} target="_blank" rel="noopener noreferrer">
+              <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18" />
+                <path d="M12 3a14 14 0 0 1 0 18" />
+                <path d="M12 3a14 14 0 0 0 0 18" />
+              </svg>
+              홈페이지
+            </a>
+          )}
+          {!compact && place.homepage && (
+            <a className={`${FLOAT_TILE} ${FLOAT_TILE_SOFT}`} href={place.homepage} target="_blank" rel="noopener noreferrer">
+              <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 21s-6.5-6.2-6.5-11.2A6.5 6.5 0 0 1 18.5 9.8C18.5 14.8 12 21 12 21z" />
+                <circle cx="12" cy="9.8" r="2.4" />
+              </svg>
+              카카오맵
+            </a>
+          )}
+          <ShareButton
+            className={`${FLOAT_TILE} ${FLOAT_TILE_SOFT}`}
+            title={place.placeName}
+            text={place.address}
+            url={kakaoPlaceLink(place.placeName, place.coordinates[1], place.coordinates[0])}
+          >
+            <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 15V4" />
+              <path d="M8 8l4-4 4 4" />
+              <path d="M5 13v6h14v-6" />
+            </svg>
+            공유
+          </ShareButton>
+          {compact && onExpand && (
+            <button onClick={onExpand} aria-expanded={false} className={`${FLOAT_TILE} ${FLOAT_TILE_SOFT}`}>
+              <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 14l5-5 5 5" />
+              </svg>
+              자세히
+            </button>
+          )}
+          {!compact && onCollapse && (
+            <button onClick={onCollapse} aria-expanded={true} className={`${FLOAT_TILE} ${FLOAT_TILE_SOFT}`}>
+              <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 10l5 5 5-5" />
+              </svg>
+              접기
+            </button>
+          )}
+        </div>
+      ) : (
       <div className="mt-3.5 flex flex-wrap gap-2">
         <a
           className="tp-caption inline-flex min-h-[44px] items-center rounded-2xl border-[1.5px] border-[var(--color-deep-blue)] bg-[var(--color-deep-blue)] px-4 py-2.5 text-white"
@@ -296,6 +408,7 @@ export default function DetailContent({
           </button>
         )}
       </div>
+      )}
 
       {/* [Sticky CTA] 네온 옐로우 배경 + 딥 블루 텍스트, 탭 시 scale 0.95 햅틱 애니메이션.
           [잠정 링크 — 2026-09-19] mg-biz 리드 폼(LEAD_FORM_LIVE_AT)이 뜨기 전까지는 리드
