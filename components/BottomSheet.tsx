@@ -36,6 +36,7 @@ export default function BottomSheet({
   dragHandleLabel,
   minTopPx = 0,
   floatingActions,
+  coverPx = null,
 }: {
   snap: SheetSnap;
   onSnapChange: (s: SheetSnap) => void;
@@ -46,6 +47,10 @@ export default function BottomSheet({
   // 끌든 항상 시트를 따라 움직인다. 예전에는 지도 위에 30vh 로 좌표를 박아 뒀는데, 시트가
   // half(50%)로 열리는 순간 그 아래로 완전히 묻혀 눌리지 않았다.
   floatingActions?: React.ReactNode;
+  // 위에 다른 시트(장소 상세 카드)가 떠 있을 때 그 높이(px). 주어지면 스냅 대신 정확히 그만큼만
+  // 올라와 그 시트 뒤에 숨는다 — 목록 머리줄이 카드 위로 삐져나오지 않고, floatingActions 는
+  // 카드 윗변 바로 위에 붙어 카드와 함께 오르내린다(2026-10-21).
+  coverPx?: number | null;
 }) {
   const dragControls = useDragControls();
   const [vh, setVh] = useState(() => (typeof window === "undefined" ? 800 : window.innerHeight));
@@ -58,10 +63,16 @@ export default function BottomSheet({
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  // 카드 위에 붙은 버튼 묶음(48px 두 개 + 위 여백 18px)이 상단 검색 묶음과 겹칠 만큼 자리가
+  // 없으면(가로 화면 등) 카드가 떠 있는 동안만 숨긴다 — 카드를 닫으면 다시 나온다.
+  const FAB_STACK_PX = 96 + 18;
+  const fabCrowded = coverPx != null && vh - coverPx - FAB_STACK_PX < minTopPx;
+
   useEffect(() => {
-    const controls = animate(y, pxFor(snap, vh, minTopPx), { type: "spring", damping: 32, stiffness: 300 });
+    const target = coverPx != null ? Math.max(vh - coverPx, minTopPx) : pxFor(snap, vh, minTopPx);
+    const controls = animate(y, target, { type: "spring", damping: 32, stiffness: 300 });
     return () => controls.stop();
-  }, [snap, vh, minTopPx, y]);
+  }, [snap, vh, minTopPx, y, coverPx]);
 
   /*
    * [화면 밖 목록 — 2026-09-09 실측으로 드러난 문제]
@@ -134,12 +145,15 @@ export default function BottomSheet({
    * 독립된 화면(페이지)처럼 보이게 한다. peek/half 로 돌아가면 다시 둥글어진다.
    */
   const sheetRadius = snap === "full" ? "rounded-t-none" : "rounded-t-[20px]";
+  // 떠 있는 장소 카드(B안)가 나와 있는 동안엔 목록 시트 몸통을 감춘다 — 카드 양옆·아래 틈으로
+  // 흰 시트가 비치면 "떠 있는" 카드가 아니라 바닥 시트처럼 보인다. 카드 위 위치 버튼만 남긴다.
+  const bodyHidden = coverPx != null;
 
   return (
     <motion.div
       // overflow-hidden 을 여기에 두지 않는다. floatingActions 는 시트 위쪽(bottom:100%)에
       // 놓이므로 여기서 자르면 통째로 사라진다. 둥근 모서리 클리핑은 아래 내용 상자가 맡는다.
-      className={`gpu absolute inset-x-0 bottom-0 z-[var(--z-bottom-sheet)] flex flex-col ${sheetRadius} bg-white shadow-[0_-16px_40px_-8px_rgba(0,0,0,0.10)] transition-[border-radius] duration-300`}
+      className={`gpu absolute inset-x-0 bottom-0 z-[var(--z-bottom-sheet)] flex flex-col ${sheetRadius} transition-[border-radius] duration-300 ${bodyHidden ? "pointer-events-none" : "bg-white shadow-[0_-16px_40px_-8px_rgba(0,0,0,0.10)]"}`}
       style={{ height: "100dvh", y }}
       drag="y"
       dragListener={false}
@@ -148,7 +162,7 @@ export default function BottomSheet({
       dragElastic={0.15}
       onDragEnd={handleDragEnd}
     >
-      {floatingActions && (
+      {floatingActions && !fabCrowded && (
         // 버튼 사이 간격으로는 지도를 만질 수 있게 한다(상단 스택과 같은 이유).
         // 껍데기만 터치를 흘려보내고, 버튼 각각이 pointer-events-auto 를 갖는다.
         <div className="pointer-events-none absolute bottom-full right-3.5 mb-[18px] flex flex-col gap-2.5">
@@ -157,7 +171,7 @@ export default function BottomSheet({
       )}
 
       <motion.div
-        className={`flex flex-col overflow-hidden ${sheetRadius} transition-[border-radius] duration-300`}
+        className={`flex flex-col overflow-hidden ${sheetRadius} transition-[border-radius] duration-300 ${bodyHidden ? "invisible" : ""}`}
         style={{
           height: visibleH,
           // 홈 인디케이터가 있는 기기에서 목록 마지막 줄이 그 아래로 들어가지 않게 한다.
